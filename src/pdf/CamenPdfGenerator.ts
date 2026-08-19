@@ -325,15 +325,14 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
       height: 28,
       draw: (entry: DailyEntry, x: number, y: number, w: number, h: number) => {
         if (entry.notes) {
-          doc.setFontSize(4.8);
+          doc.setFontSize(4.5);
           doc.setTextColor(cBlack);
-          // Truncate note if too long to prevent overflowing column height
           let noteText = entry.notes.trim();
-          if (noteText.length > 32) {
-            noteText = noteText.substring(0, 31) + '…';
+          if (noteText.length > 28) {
+            noteText = noteText.substring(0, 27) + '…';
           }
-          // Render vertically rotated 90 degrees inside the column
-          doc.text(noteText, x + w / 2 + 0.8, y + 2.5, { angle: 90 });
+          // Start exactly from the bottom of the note cell (y + h - 1.5) so rotating 90° draws upwards WITHIN the note cell!
+          doc.text(noteText, x + w / 2 + 0.6, y + h - 1.5, { angle: 90 });
         }
       }
     }
