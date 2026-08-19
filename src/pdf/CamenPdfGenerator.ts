@@ -10,10 +10,10 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  const m = { top: 10, right: 12, bottom: 10, left: 12 };
+  const m = { top: 8, right: 10, bottom: 8, left: 10 };
   const contentWidth = pageWidth - m.left - m.right;
 
-  const headerHeight = 28;
+  const headerHeight = 24;
   const leftLabelWidth = 92;
   const gridWidth = contentWidth - leftLabelWidth;
   const numCols = 40;
@@ -21,7 +21,7 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   const gridStartX = m.left + leftLabelWidth;
 
   const chartStartY = m.top + headerHeight;
-  const chartHeight = 72;
+  const chartHeight = 68;
   const gridDataStartY = chartStartY + chartHeight + 4;
   const gridDataHeight = pageHeight - gridDataStartY - m.bottom;
 
@@ -56,24 +56,24 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
 
   let currentY = m.top;
 
-  // 1. Header
+  // 1. Header Information
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(cDarkGrey);
   doc.text('Associazione Sintotermico CAMEN', m.left, currentY + 3);
 
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(cPrimary);
   doc.text('SCHEDA SINTOTERMICA', pageWidth / 2, currentY + 4, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(cDarkGrey);
   doc.text("Associazione La Bottega dell'Orefice\nwww.metodinaturali.it", pageWidth - m.right, currentY + 2, { align: 'right' });
-  doc.text(`Codice Insegnante: ${cycle.teacher_code || 'N/D'}`, pageWidth - m.right, currentY + 13, { align: 'right' });
+  doc.text(`Codice Insegnante: ${cycle.teacher_code || 'N/D'}`, pageWidth - m.right, currentY + 12, { align: 'right' });
 
-  currentY += 16;
-  doc.setFontSize(9);
+  currentY += 14;
+  doc.setFontSize(8.5);
   doc.setTextColor(cBlack);
   doc.text(`Nome: ${cycle.name || 'N/D'}`, m.left, currentY);
   doc.text(`Num. Ciclo: ${cycle.cycle_number || '1'}`, m.left + 55, currentY);
@@ -81,34 +81,34 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   doc.text(`Sigla: ${cycle.sigla || 'N/D'}`, m.left + 145, currentY);
   doc.text(`Protocollo: ${cycle.protocol_number || 'N/D'}`, m.left + 175, currentY);
 
-  currentY += 4;
+  currentY += 3.5;
   doc.setDrawColor(cLightGrey);
   doc.setLineWidth(0.3);
   doc.line(m.left, currentY, pageWidth - m.right, currentY);
 
-  // 2. Left Sidebar
+  // 2. Left Sidebar (BBT Method, Time, Shortest Cycle)
   let leftY = chartStartY + 3;
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(cBlack);
   doc.text('Temperatura Basale:', m.left, leftY);
   doc.setFont('helvetica', 'normal');
 
   const methods = ['Rettale', 'Vaginale', 'Orale'];
-  let chkX = m.left + 32;
+  const chkX = m.left + 30;
   methods.forEach((meth, idx) => {
-    const yPos = leftY - 2.5 + idx * 5.5;
+    const yPos = leftY - 2.2 + idx * 5;
     doc.setDrawColor(cDarkGrey);
-    doc.rect(chkX, yPos, 3, 3);
-    doc.text(meth, chkX + 5, yPos + 2.5);
+    doc.rect(chkX, yPos, 2.8, 2.8);
+    doc.text(meth, chkX + 4.5, yPos + 2.3);
     if (cycle.bbt_method === meth) {
       doc.setFont('helvetica', 'bold');
-      doc.text('X', chkX + 1.5, yPos + 2.4, { align: 'center' });
+      doc.text('X', chkX + 1.4, yPos + 2.2, { align: 'center' });
       doc.setFont('helvetica', 'normal');
     }
   });
 
-  leftY += 22;
+  leftY += 19;
   let firstTime = '--:--';
   for (let i = 1; i <= numCols; i++) {
     if (entries[i]?.bbt_time) {
@@ -119,15 +119,15 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   doc.setFont('helvetica', 'bold');
   doc.text('Ora di rilevazione:', m.left, leftY);
   doc.setFont('helvetica', 'normal');
-  doc.text(firstTime, m.left + 32, leftY);
+  doc.text(firstTime, m.left + 30, leftY);
 
-  leftY += 8;
+  leftY += 7;
   doc.setFont('helvetica', 'bold');
   doc.text('Durata ciclo più breve (ultimi 12):', m.left, leftY);
   doc.setFont('helvetica', 'normal');
-  doc.text(cycle.shortest_cycle ? `${cycle.shortest_cycle} giorni` : 'N/D', m.left + 52, leftY);
+  doc.text(cycle.shortest_cycle ? `${cycle.shortest_cycle} giorni` : 'N/D', m.left + 48, leftY);
 
-  // 3. BBT Chart Grid & Vector Plotting
+  // 3. BBT Chart Grid Lines & Points
   doc.setDrawColor(cGridLine);
   doc.setLineWidth(0.15);
 
@@ -150,15 +150,16 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
     }
     doc.line(gridStartX, yPos, gridStartX + gridWidth, yPos);
 
-    doc.setFontSize(6);
+    doc.setFontSize(5.5);
     doc.setTextColor(cDarkGrey);
     const labelStr = tempVal.toFixed(1).replace('.', ',');
-    doc.text(labelStr, gridStartX - 2, yPos + 0.8, { align: 'right' });
-    doc.text(labelStr, gridStartX + gridWidth + 1.5, yPos + 0.8, { align: 'left' });
+    doc.text(labelStr, gridStartX - 1.5, yPos + 0.7, { align: 'right' });
+    doc.text(labelStr, gridStartX + gridWidth + 1.2, yPos + 0.7, { align: 'left' });
   }
 
+  // Draw Connected Temperature Line
   doc.setDrawColor(cBlack);
-  doc.setLineWidth(0.4);
+  doc.setLineWidth(0.35);
   doc.setFillColor(cBlack);
 
   const points: { x: number; y: number }[] = [];
@@ -185,125 +186,135 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
 
   points.forEach(p => {
     if (p.x > 0) {
-      doc.circle(p.x, p.y, 0.8, 'FD');
+      doc.circle(p.x, p.y, 0.7, 'FD');
     }
   });
 
-  doc.setFontSize(6.5);
+  // Top Day of Month Numbers
+  doc.setFontSize(6);
   doc.setTextColor(cBlack);
   columnDates.forEach((col, idx) => {
     const x = gridStartX + idx * colWidth + colWidth / 2;
     doc.text(col.dayOfMonth, x, chartStartY - 1.5, { align: 'center' });
   });
 
-  // 4. Symptothermal Data Grid Rows
+  // 4. Matrix Rows Definitions
   const rows = [
     {
       key: 'mest',
       label: 'Mestruazione / Perdite ematiche',
-      height: gridDataHeight * 0.11,
+      height: 7.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number, h: number) => {
         const m = entry.menstruation;
         if (m === 'Abbondante' || m === 'M+') {
           doc.setFillColor(cRedDark);
-          doc.rect(x + 0.05 * w, y + 0.05 * h, w * 0.9, h * 0.9, 'F');
+          doc.rect(x + 0.4, y + 0.8, w - 0.8, h - 1.6, 'F');
         } else if (m === 'Flusso' || m === 'M') {
           doc.setFillColor(cRed);
-          doc.rect(x + 0.15 * w, y + 0.15 * h, w * 0.7, h * 0.7, 'F');
+          doc.rect(x + 0.7, y + 1.2, w - 1.4, h - 2.4, 'F');
         } else if (m === 'Spotting' || m === 'm') {
           doc.setFillColor('#FCA5A5');
-          doc.rect(x + 0.25 * w, y + 0.25 * h, w * 0.5, h * 0.5, 'F');
+          doc.rect(x + 1.0, y + 1.8, w - 2.0, h - 3.6, 'F');
         }
       }
     },
     {
       key: 'day',
       label: 'Giorno del Ciclo',
-      height: gridDataHeight * 0.08,
+      height: 6.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number, _h: number) => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(6.5);
+        doc.setFontSize(6);
         doc.setTextColor(cBlack);
-        doc.text(String(entry.cycle_day), x + w / 2, y + 2.5, { align: 'center' });
+        doc.text(String(entry.cycle_day), x + w / 2, y + 4.2, { align: 'center' });
         doc.setFont('helvetica', 'normal');
       }
     },
     {
       key: 'sens',
-      label: 'SENSAZIONE: Asciutto - Umido - Bagnato - Lubrificato',
-      height: gridDataHeight * 0.09,
+      label: 'SENSAZIONE: Asciutto - Umido - Bagnato - Lubrificato (A, U, B, L)',
+      height: 6.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.sensation) {
-          doc.setFontSize(6.5);
-          doc.text(entry.sensation, x + w / 2, y + 2.6, { align: 'center' });
+          doc.setFontSize(6);
+          doc.setTextColor(cBlack);
+          doc.text(entry.sensation, x + w / 2, y + 4.4, { align: 'center' });
         }
       }
     },
     {
       key: 'muco_q',
       label: 'MUCO: Quantità (+, -, +-, ++, /, *)',
-      height: gridDataHeight * 0.08,
+      height: 6.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
-        const text = entry.mucus_qty_symbol || entry.mucus_qty || '';
+        const text = (entry.mucus_qty_symbol || entry.mucus_qty || '').trim();
         if (text) {
-          doc.setFontSize(6);
-          doc.text(text.substring(0, 3), x + w / 2, y + 2.4, { align: 'center' });
+          doc.setFontSize(5.5);
+          doc.setTextColor(cBlack);
+          doc.text(text, x + w / 2, y + 4.4, { align: 'center' });
         }
       }
     },
     {
       key: 'muco_c',
       label: 'MUCO: Caratteristiche (O, T, A, F, D, E)',
-      height: gridDataHeight * 0.08,
+      height: 6.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.mucus_char) {
-          doc.setFontSize(5.5);
-          doc.text(entry.mucus_char.substring(0, 5), x + w / 2, y + 2.4, { align: 'center' });
+          // Remove spaces/commas to keep text compact (e.g. 'OAD')
+          const compact = entry.mucus_char.replace(/[\s,]+/g, '').toUpperCase();
+          doc.setFontSize(4.8);
+          doc.setTextColor(cBlack);
+          doc.text(compact, x + w / 2, y + 4.3, { align: 'center' });
         }
       }
     },
     {
       key: 'cerv_cons',
       label: 'CERVICE: Consistenza (D, S)',
-      height: gridDataHeight * 0.08,
+      height: 5.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.cervix_consistency) {
-          doc.setFontSize(6);
-          doc.text(entry.cervix_consistency, x + w / 2, y + 2.4, { align: 'center' });
+          doc.setFontSize(5.5);
+          doc.setTextColor(cBlack);
+          doc.text(entry.cervix_consistency, x + w / 2, y + 3.8, { align: 'center' });
         }
       }
     },
     {
       key: 'cerv_open',
       label: 'CERVICE: Apertura (C, S, A)',
-      height: gridDataHeight * 0.08,
+      height: 5.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.cervix_opening) {
-          doc.setFontSize(6);
-          doc.text(entry.cervix_opening, x + w / 2, y + 2.4, { align: 'center' });
+          doc.setFontSize(5.5);
+          doc.setTextColor(cBlack);
+          doc.text(entry.cervix_opening, x + w / 2, y + 3.8, { align: 'center' });
         }
       }
     },
     {
       key: 'cerv_pos',
       label: 'CERVICE: Posizione (B, M, A)',
-      height: gridDataHeight * 0.08,
+      height: 5.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.cervix_position) {
-          doc.setFontSize(6);
-          doc.text(entry.cervix_position, x + w / 2, y + 2.4, { align: 'center' });
+          doc.setFontSize(5.5);
+          doc.setTextColor(cBlack);
+          doc.text(entry.cervix_position, x + w / 2, y + 3.8, { align: 'center' });
         }
       }
     },
     {
       key: 'coito',
       label: 'COITO: Completo (X) Interr. (I) s/eiac. (O) c/pres. (P)',
-      height: gridDataHeight * 0.14,
+      height: 6.5,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.intercourse) {
-          doc.setFontSize(6.5);
+          doc.setFontSize(6);
           doc.setFont('helvetica', 'bold');
-          doc.text(entry.intercourse, x + w / 2, y + 3, { align: 'center' });
+          doc.setTextColor(cBlack);
+          doc.text(entry.intercourse, x + w / 2, y + 4.4, { align: 'center' });
           doc.setFont('helvetica', 'normal');
         }
       }
@@ -311,12 +322,18 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
     {
       key: 'note',
       label: 'NOTE',
-      height: gridDataHeight * 0.18,
-      draw: (entry: DailyEntry, x: number, y: number, w: number) => {
+      height: 28,
+      draw: (entry: DailyEntry, x: number, y: number, w: number, h: number) => {
         if (entry.notes) {
-          doc.setFontSize(4.5);
-          const shortNote = entry.notes.length > 10 ? entry.notes.substring(0, 9) + '…' : entry.notes;
-          doc.text(shortNote, x + w / 2, y + 2.5, { align: 'center' });
+          doc.setFontSize(4.8);
+          doc.setTextColor(cBlack);
+          // Truncate note if too long to prevent overflowing column height
+          let noteText = entry.notes.trim();
+          if (noteText.length > 32) {
+            noteText = noteText.substring(0, 31) + '…';
+          }
+          // Render vertically rotated 90 degrees inside the column
+          doc.text(noteText, x + w / 2 + 0.8, y + 2.5, { angle: 90 });
         }
       }
     }
@@ -328,26 +345,31 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   doc.setDrawColor(cLightGrey);
   doc.setLineWidth(0.2);
 
+  // Outer Grid Box
   doc.line(m.left, gridDataStartY, pageWidth - m.right, gridDataStartY);
   doc.line(m.left, gridDataStartY + totalGridH, pageWidth - m.right, gridDataStartY + totalGridH);
-
   doc.line(m.left, gridDataStartY, m.left, gridDataStartY + totalGridH);
   doc.line(gridStartX, gridDataStartY, gridStartX, gridDataStartY + totalGridH);
   doc.line(pageWidth - m.right, gridDataStartY, pageWidth - m.right, gridDataStartY + totalGridH);
 
+  // Vertical Column Dividers
   for (let i = 0; i <= numCols; i++) {
     const x = gridStartX + i * colWidth;
     doc.line(x, gridDataStartY, x, gridDataStartY + totalGridH);
   }
 
+  // Draw Row Labels and Horizontal Lines
   rows.forEach(r => {
-    doc.setFontSize(6.5);
+    doc.setFontSize(6);
     doc.setTextColor(cBlack);
-    doc.text(r.label, m.left + 2, rowY + 2.8, { maxWidth: leftLabelWidth - 4 });
+    doc.text(r.label, m.left + 2, rowY + (r.key === 'note' ? 4.5 : r.height / 2 + 1.2), {
+      maxWidth: leftLabelWidth - 4,
+    });
     doc.line(m.left, rowY + r.height, pageWidth - m.right, rowY + r.height);
     rowY += r.height;
   });
 
+  // Draw Cell Contents
   rowY = gridDataStartY;
   rows.forEach(r => {
     columnDates.forEach((col, colIdx) => {
