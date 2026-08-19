@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { useCycleData } from './hooks/useCycleData';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { ActiveTab, Cycle } from './types';
 import { Header } from './components/layout/Header';
 import { BottomNav } from './components/layout/BottomNav';
@@ -10,6 +11,7 @@ import { CyclesListView } from './components/cycles/CyclesListView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AuthModal } from './components/auth/AuthModal';
 import { CycleModal } from './components/cycles/CycleModal';
+import { InstallModal } from './components/pwa/InstallModal';
 
 const MainContent: React.FC = () => {
   const {
@@ -25,9 +27,12 @@ const MainContent: React.FC = () => {
     importLegacyCycle,
   } = useCycleData();
 
+  const { isIOS, isStandalone, triggerInstall } = usePWAInstall();
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('today');
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
   const [isCycleModalOpen, setIsCycleModalOpen] = useState<boolean>(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
   const [cycleToEdit, setCycleToEdit] = useState<Cycle | null>(null);
 
   const handleOpenNewCycle = () => {
@@ -52,6 +57,11 @@ const MainContent: React.FC = () => {
     setActiveTab('today');
   };
 
+  const handleTriggerNativeInstall = async () => {
+    await triggerInstall();
+    setIsInstallModalOpen(false);
+  };
+
   const nextCycleNumber = cycles.length > 0 ? Math.max(...cycles.map((c) => c.cycle_number)) + 1 : 1;
 
   return (
@@ -63,6 +73,8 @@ const MainContent: React.FC = () => {
         cycles={cycles}
         onSelectCycle={setActiveCycleId}
         onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenInstall={() => setIsInstallModalOpen(true)}
+        isStandalone={isStandalone}
       />
 
       {/* Main View Switcher */}
@@ -99,6 +111,8 @@ const MainContent: React.FC = () => {
           <SettingsView
             onImportLegacy={importLegacyCycle}
             onOpenAuth={() => setIsAuthOpen(true)}
+            onOpenInstall={() => setIsInstallModalOpen(true)}
+            isStandalone={isStandalone}
           />
         )}
       </main>
@@ -115,6 +129,14 @@ const MainContent: React.FC = () => {
         onClose={() => setIsCycleModalOpen(false)}
         onSave={handleSaveCycle}
         nextCycleNumber={nextCycleNumber}
+      />
+
+      <InstallModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+        isIOS={isIOS}
+        isStandalone={isStandalone}
+        onTriggerNativeInstall={handleTriggerNativeInstall}
       />
 
     </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Cycle } from '../../types';
-import { Sparkles, LogIn, ChevronDown } from 'lucide-react';
+import { Sparkles, LogIn, ChevronDown, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface HeaderProps {
@@ -8,6 +8,8 @@ interface HeaderProps {
   cycles: Cycle[];
   onSelectCycle: (id: string) => void;
   onOpenAuth: () => void;
+  onOpenInstall: () => void;
+  isStandalone?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +17,8 @@ export const Header: React.FC<HeaderProps> = ({
   cycles,
   onSelectCycle,
   onOpenAuth,
+  onOpenInstall,
+  isStandalone,
 }) => {
   const { user } = useAuth();
 
@@ -59,8 +63,23 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* User Account / Login Button */}
+        {/* Action Buttons: Install PWA + User Login */}
         <div className="flex items-center gap-2">
+          
+          {/* Install PWA Button (Hidden if already in standalone app mode) */}
+          {!isStandalone && (
+            <button
+              type="button"
+              onClick={onOpenInstall}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-nature-100 hover:bg-nature-200/80 text-nature-800 text-xs font-semibold transition-colors"
+              title="Installa come App sullo Smartphone"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Installa App</span>
+            </button>
+          )}
+
+          {/* User Account / Login Button */}
           {user ? (
             <div
               onClick={onOpenAuth}
@@ -75,9 +94,10 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-nature-600 hover:bg-nature-700 text-white text-xs font-semibold shadow-soft transition-colors"
             >
               <LogIn className="w-3.5 h-3.5" />
-              <span>Accedi / Registrati</span>
+              <span>Accedi</span>
             </button>
           )}
+
         </div>
 
       </div>

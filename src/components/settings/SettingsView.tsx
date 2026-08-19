@@ -10,14 +10,23 @@ import {
   ShieldCheck,
   BookOpen,
   Info,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 
 interface SettingsViewProps {
   onImportLegacy: (data: LegacyCycleJSON) => Promise<void>;
   onOpenAuth: () => void;
+  onOpenInstall: () => void;
+  isStandalone?: boolean;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onImportLegacy, onOpenAuth }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  onImportLegacy,
+  onOpenAuth,
+  onOpenInstall,
+  isStandalone,
+}) => {
   const { user, logout } = useAuth();
 
   return (
@@ -79,7 +88,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onImportLegacy, onOp
         )}
       </div>
 
-      {/* 2. Privacy & Security Badge */}
+      {/* 2. Install PWA Section */}
+      {!isStandalone && (
+        <div className="bg-white rounded-3xl p-5 border border-nature-200/70 shadow-card flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-nature-100 text-nature-700">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-stone-900 text-sm">Installa come App</h3>
+              <p className="text-[11px] text-stone-400">Aggiungi l'icona alla schermata Home</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenInstall}
+            className="flex items-center gap-1 px-4 py-2 rounded-xl bg-nature-600 hover:bg-nature-700 text-white font-bold text-xs shadow-soft transition-all"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Installa</span>
+          </button>
+        </div>
+      )}
+
+      {/* 3. Privacy & Security Badge */}
       <div className="bg-nature-50 rounded-3xl p-5 border border-nature-200/80 flex items-start gap-3">
         <div className="p-2 rounded-xl bg-nature-100 text-nature-700 shrink-0">
           <ShieldCheck className="w-5 h-5" />
@@ -92,10 +124,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onImportLegacy, onOp
         </div>
       </div>
 
-      {/* 3. Legacy Data Importer (Only visible when user is logged in) */}
+      {/* 4. Legacy Data Importer (Only visible when user is logged in) */}
       {user && <LegacyDataImporter onImport={onImportLegacy} />}
 
-      {/* 4. Guida Sintotermica Rapida CAMEN */}
+      {/* 5. Guida Sintotermica Rapida CAMEN */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-nature-200/70 shadow-card space-y-3">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-xl bg-sage-100 text-sage-700">
@@ -130,7 +162,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onImportLegacy, onOp
         </div>
       </div>
 
-      {/* 5. App Info */}
+      {/* 6. App Info */}
       <div className="text-center text-[11px] text-stone-400 space-y-1">
         <div className="flex items-center justify-center gap-1">
           <Info className="w-3 h-3" />
