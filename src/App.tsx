@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { useCycleData } from './hooks/useCycleData';
 import { ActiveTab, Cycle } from './types';
 import { Header } from './components/layout/Header';
@@ -10,10 +10,8 @@ import { CyclesListView } from './components/cycles/CyclesListView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AuthModal } from './components/auth/AuthModal';
 import { CycleModal } from './components/cycles/CycleModal';
-import { AlertCircle } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { isConfigured } = useAuth();
   const {
     cycles,
     activeCycle,
@@ -66,23 +64,6 @@ const MainContent: React.FC = () => {
         onSelectCycle={setActiveCycleId}
         onOpenAuth={() => setIsAuthOpen(true)}
       />
-
-      {/* Supabase unconfigured warning banner */}
-      {!isConfigured && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>
-            Database Supabase non configurato.{' '}
-            <button
-              onClick={() => setActiveTab('settings')}
-              className="underline font-bold hover:text-amber-950"
-            >
-              Apri Impostazioni
-            </button>{' '}
-            per inserire le tue credenziali.
-          </span>
-        </div>
-      )}
 
       {/* Main View Switcher */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6">
