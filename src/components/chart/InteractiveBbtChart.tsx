@@ -40,12 +40,7 @@ export const InteractiveBbtChart: React.FC<InteractiveBbtChartProps> = ({
 }) => {
   const days = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  const labels = days.map((d) => {
-    const dateStr = calculateDateForDay(cycle.start_date, d);
-    if (!dateStr) return `G${d}`;
-    const [, m, dayOfMonth] = dateStr.split('-');
-    return `${d}\n(${dayOfMonth}/${m})`;
-  });
+  const labels = days.map((d) => String(d));
 
   const temperatures = days.map((d) => {
     const entry = entries[d];
@@ -82,6 +77,14 @@ export const InteractiveBbtChart: React.FC<InteractiveBbtChartProps> = ({
         onSelectDay(days[index]);
       }
     },
+    layout: {
+      padding: {
+        top: 10,
+        bottom: 5,
+        left: 5,
+        right: 10,
+      }
+    },
     scales: {
       x: {
         grid: {
@@ -92,14 +95,14 @@ export const InteractiveBbtChart: React.FC<InteractiveBbtChartProps> = ({
           font: {
             size: 10,
             family: 'Plus Jakarta Sans',
+            weight: '600',
           },
-          color: '#78716c',
+          color: '#57534e',
           maxRotation: 0,
+          minRotation: 0,
           autoSkip: false,
           callback: function (_val: any, index: number) {
-            const dateStr = calculateDateForDay(cycle.start_date, days[index]);
-            const dayOfMonth = dateStr ? dateStr.split('-')[2] : '';
-            return `${days[index]} (${dayOfMonth})`;
+            return days[index];
           },
         },
       },
@@ -149,7 +152,7 @@ export const InteractiveBbtChart: React.FC<InteractiveBbtChartProps> = ({
             const index = items[0].dataIndex;
             const dayNum = days[index];
             const dateStr = calculateDateForDay(cycle.start_date, dayNum);
-            return `Giorno ${dayNum} (${dateStr})`;
+            return `Giorno ${dayNum} (${dateStr || ''})`;
           },
           label: function (context: any) {
             return `BBT: ${Number(context.raw).toFixed(2)} °C`;
@@ -160,8 +163,10 @@ export const InteractiveBbtChart: React.FC<InteractiveBbtChartProps> = ({
   };
 
   return (
-    <div className="w-full h-72 sm:h-80">
-      <Line data={data} options={options} />
+    <div className="overflow-x-auto rounded-2xl pb-2">
+      <div className="min-w-[860px] h-72 sm:h-80">
+        <Line data={data} options={options} />
+      </div>
     </div>
   );
 };
