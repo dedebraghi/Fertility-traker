@@ -6,7 +6,6 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
     throw new Error('Dati del ciclo o data di inizio mancanti');
   }
 
-  // Landscape A4: 297mm x 210mm
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -26,20 +25,18 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
   const gridDataStartY = chartStartY + chartHeight + 4;
   const gridDataHeight = pageHeight - gridDataStartY - m.bottom;
 
-  // Chart Y-Axis Scale
   const minY = 36.0;
   const maxY = 37.5;
   const tempRange = maxY - minY;
 
-  // Colors
   const cBlack = '#1A1A1A';
   const cDarkGrey = '#4A4A4A';
   const cLightGrey = '#D1D5DB';
   const cGridLine = '#E5E7EB';
   const cRed = '#DC2626';
+  const cRedDark = '#991B1B';
   const cPrimary = '#BB7E62';
 
-  // Helper date maps
   const [sy, sm, sd] = cycle.start_date.split('-').map(Number);
   const cycleStartObj = new Date(sy, sm - 1, sd);
 
@@ -160,7 +157,6 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
     doc.text(labelStr, gridStartX + gridWidth + 1.5, yPos + 0.8, { align: 'left' });
   }
 
-  // Plot Chart Points and Lines
   doc.setDrawColor(cBlack);
   doc.setLineWidth(0.4);
   doc.setFillColor(cBlack);
@@ -207,10 +203,14 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
       label: 'Mestruazione / Perdite ematiche',
       height: gridDataHeight * 0.11,
       draw: (entry: DailyEntry, x: number, y: number, w: number, h: number) => {
-        if (entry.menstruation === 'M') {
+        const m = entry.menstruation;
+        if (m === 'Abbondante' || m === 'M+') {
+          doc.setFillColor(cRedDark);
+          doc.rect(x + 0.05 * w, y + 0.05 * h, w * 0.9, h * 0.9, 'F');
+        } else if (m === 'Flusso' || m === 'M') {
           doc.setFillColor(cRed);
           doc.rect(x + 0.15 * w, y + 0.15 * h, w * 0.7, h * 0.7, 'F');
-        } else if (entry.menstruation === 'm') {
+        } else if (m === 'Spotting' || m === 'm') {
           doc.setFillColor('#FCA5A5');
           doc.rect(x + 0.25 * w, y + 0.25 * h, w * 0.5, h * 0.5, 'F');
         }
@@ -241,7 +241,7 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
     },
     {
       key: 'muco_q',
-      label: 'MUCO: Quantità (+, -, /, *)',
+      label: 'MUCO: Quantità (+, -, +-, ++, /, *)',
       height: gridDataHeight * 0.08,
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         const text = entry.mucus_qty_symbol || entry.mucus_qty || '';
@@ -258,7 +258,7 @@ export function generateCamenPDF(cycle: Cycle, entries: Record<number, DailyEntr
       draw: (entry: DailyEntry, x: number, y: number, w: number) => {
         if (entry.mucus_char) {
           doc.setFontSize(5.5);
-          doc.text(entry.mucus_char.substring(0, 4), x + w / 2, y + 2.4, { align: 'center' });
+          doc.text(entry.mucus_char.substring(0, 5), x + w / 2, y + 2.4, { align: 'center' });
         }
       }
     },

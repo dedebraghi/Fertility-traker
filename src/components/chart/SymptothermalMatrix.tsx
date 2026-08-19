@@ -47,26 +47,35 @@ export const SymptothermalMatrix: React.FC<SymptothermalMatrixProps> = ({
 
         <tbody className="divide-y divide-nature-100 font-mono">
           
-          {/* Row: Mestruazione */}
+          {/* Row: Mestruazione (Abbondante, Flusso, Spotting) */}
           <tr className="hover:bg-nature-50/50">
             <td className="sticky left-0 z-10 bg-white font-sans font-semibold text-stone-700 px-3 py-2 text-left border-r border-nature-200">
-              🩸 Flusso / M
+              🩸 Mestruazione
             </td>
             {days.map((day) => {
               const m = entries[day]?.menstruation;
+              const isAbbondante = m === 'Abbondante' || m === 'M+';
+              const isFlusso = m === 'Flusso' || m === 'M';
+              const isSpotting = m === 'Spotting' || m === 'm';
+
               return (
                 <td
                   key={day}
                   onClick={() => onSelectDay && onSelectDay(day)}
                   className="px-1 py-2 cursor-pointer border-r border-nature-100"
                 >
-                  {m === 'M' && (
-                    <span className="inline-block w-4 h-4 rounded-full bg-rose-500 text-white font-bold text-[9px] leading-4 text-center">
+                  {isAbbondante && (
+                    <span className="inline-block px-1 rounded bg-rose-700 text-white font-extrabold text-[9px] leading-4 text-center shadow-xs" title="Flusso Abbondante">
+                      M+
+                    </span>
+                  )}
+                  {isFlusso && (
+                    <span className="inline-block w-4 h-4 rounded-full bg-rose-500 text-white font-bold text-[9px] leading-4 text-center" title="Flusso Normale">
                       M
                     </span>
                   )}
-                  {m === 'm' && (
-                    <span className="inline-block w-4 h-4 rounded-full bg-rose-200 text-rose-900 font-bold text-[9px] leading-4 text-center">
+                  {isSpotting && (
+                    <span className="inline-block w-4 h-4 rounded-full bg-rose-200 text-rose-950 font-bold text-[9px] leading-4 text-center" title="Spotting">
                       m
                     </span>
                   )}

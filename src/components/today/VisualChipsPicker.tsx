@@ -76,22 +76,25 @@ export const VisualChipsPicker: React.FC<VisualChipsPickerProps> = ({
     Boolean(cervixConsistency || cervixOpening || cervixPosition)
   );
 
-  // Toggle single mucus characteristic letter (e.g. "TF" -> toggle "T")
   const handleToggleMucusChar = (char: string) => {
     const current = (mucusChar || '').toUpperCase();
     let updated = '';
     if (current.includes(char)) {
-      updated = current.replace(new RegExp(char, 'g'), '');
+      updated = current.replace(new RegExp(char, 'g'), '').replace(/,\s*/g, ' ').trim();
     } else {
-      updated = current + char;
+      updated = (current ? current + ' ' + char : char).trim();
     }
     onChangeMucusChar(updated || null);
   };
 
+  const isAbbondante = menstruation === 'Abbondante' || menstruation === 'M+';
+  const isFlusso = menstruation === 'Flusso' || menstruation === 'M';
+  const isSpotting = menstruation === 'Spotting' || menstruation === 'm';
+
   return (
     <div className="space-y-4">
       
-      {/* 1. Mestruazione / Perdite */}
+      {/* 1. Mestruazione / Perdite - 3 Opzioni: Abbondante, Flusso, Spotting */}
       <div className="bg-white rounded-3xl p-5 border border-nature-200/70 shadow-card">
         <div className="flex items-center gap-2 mb-3">
           <div className="p-2 rounded-xl bg-blush-100 text-blush-600">
@@ -99,38 +102,56 @@ export const VisualChipsPicker: React.FC<VisualChipsPickerProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-stone-900 text-sm">Mestruazione / Perdite</h3>
-            <p className="text-[11px] text-stone-400">Flusso o spotting</p>
+            <p className="text-[11px] text-stone-400">Seleziona l'intensità del flusso</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* Abbondante */}
           <button
             type="button"
-            onClick={() => onChangeMenstruation(menstruation === 'M' ? null : 'M')}
-            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all border ${
-              menstruation === 'M'
+            onClick={() => onChangeMenstruation(isAbbondante ? null : 'Abbondante')}
+            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all border text-left sm:text-center ${
+              isAbbondante
+                ? 'bg-rose-700 text-white border-rose-700 shadow-sm scale-[1.02]'
+                : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-rose-50/60'
+            }`}
+          >
+            🩸 Abbondante
+          </button>
+
+          {/* Flusso Normale */}
+          <button
+            type="button"
+            onClick={() => onChangeMenstruation(isFlusso ? null : 'Flusso')}
+            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all border text-left sm:text-center ${
+              isFlusso
                 ? 'bg-rose-500 text-white border-rose-500 shadow-sm scale-[1.02]'
-                : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-rose-50/50'
+                : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-rose-50/60'
             }`}
           >
-            🩸 M (Flusso)
+            💧 Flusso
           </button>
+
+          {/* Spotting */}
           <button
             type="button"
-            onClick={() => onChangeMenstruation(menstruation === 'm' ? null : 'm')}
-            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all border ${
-              menstruation === 'm'
-                ? 'bg-rose-300 text-rose-950 border-rose-400 shadow-sm scale-[1.02]'
-                : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-rose-50/50'
+            onClick={() => onChangeMenstruation(isSpotting ? null : 'Spotting')}
+            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all border text-left sm:text-center ${
+              isSpotting
+                ? 'bg-rose-200 text-rose-950 border-rose-300 shadow-sm scale-[1.02]'
+                : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-rose-50/60'
             }`}
           >
-            🌸 m (Spotting)
+            🌸 Spotting
           </button>
+
+          {/* Nessuna */}
           <button
             type="button"
             onClick={() => onChangeMenstruation(null)}
-            className={`py-2.5 px-3 rounded-2xl text-xs font-medium transition-all border ${
-              menstruation === null
+            className={`py-2.5 px-3 rounded-2xl text-xs font-medium transition-all border text-left sm:text-center ${
+              !menstruation
                 ? 'bg-stone-100 text-stone-800 border-stone-300 font-semibold'
                 : 'bg-nature-50/60 text-stone-400 border-nature-200/60'
             }`}
@@ -194,18 +215,17 @@ export const VisualChipsPicker: React.FC<VisualChipsPickerProps> = ({
         <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">
           Simbolo Quantità
         </label>
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {(['+', '-', '/', '*'] as MucusQtySymbol[]).map((sym) => {
-            if (!sym) return null;
-            const info = MUCUS_SYMBOL_LABELS[sym];
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-4">
+          {(['+', '-', '+-', '++', '/', '*'] as string[]).map((sym) => {
+            const info = MUCUS_SYMBOL_LABELS[sym] || { label: sym, desc: 'Quantità muco' };
             const isSelected = mucusQtySymbol === sym;
 
             return (
               <button
                 key={sym}
                 type="button"
-                onClick={() => onChangeMucusQtySymbol(isSelected ? null : sym)}
-                className={`py-2 px-2 rounded-xl text-center border font-bold text-sm transition-all ${
+                onClick={() => onChangeMucusQtySymbol(isSelected ? null : (sym as MucusQtySymbol))}
+                className={`py-2 px-2 rounded-xl text-center border font-bold text-xs transition-all ${
                   isSelected
                     ? 'bg-sage-600 text-white border-sage-600 shadow-sm scale-[1.03]'
                     : 'bg-nature-50/60 text-stone-700 border-nature-200/60 hover:bg-sage-50'

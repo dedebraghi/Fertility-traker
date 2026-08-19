@@ -104,6 +104,8 @@ const MainContent: React.FC = () => {
             onOpenNewCycleModal={handleOpenNewCycle}
             onOpenEditCycleModal={handleOpenEditCycle}
             onDeleteCycle={deleteCycle}
+            onImportLegacy={importLegacyCycle}
+            onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}
 

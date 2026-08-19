@@ -45,7 +45,6 @@ export function useCycleData() {
       setCycles(cycleList);
 
       if (cycleList.length > 0) {
-        // Keep activeCycleId if still in list, otherwise pick the newest/active one
         setActiveCycleId(prev => {
           if (prev && cycleList.some(c => c.id === prev)) return prev;
           const defaultActive = cycleList.find(c => c.is_active) || cycleList[0];
@@ -92,12 +91,10 @@ export function useCycleData() {
     }
   }, [user]);
 
-  // Run on mount or user change
   useEffect(() => {
     fetchCycles();
   }, [fetchCycles]);
 
-  // Run when active cycle changes
   useEffect(() => {
     if (activeCycleId) {
       fetchDailyEntries(activeCycleId);
@@ -119,7 +116,7 @@ export function useCycleData() {
       user_id: user.id,
       cycle_day: entry.cycle_day,
       entry_date: entryDate,
-      bbt: entry.bbt ?? null,
+      bbt: entry.bbt !== null && entry.bbt !== undefined ? Number(entry.bbt) : null,
       bbt_time: entry.bbt_time ?? null,
       menstruation: entry.menstruation ?? null,
       sensation: entry.sensation ?? null,
@@ -133,7 +130,6 @@ export function useCycleData() {
       notes: entry.notes ?? null,
     };
 
-    // Optimistic UI Update
     setDailyEntries(prev => ({
       ...prev,
       [entry.cycle_day]: { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry,
@@ -145,14 +141,14 @@ export function useCycleData() {
 
     if (upsertErr) {
       console.error('Error saving entry:', upsertErr);
-      await fetchDailyEntries(activeCycle.id); // Rollback
+      await fetchDailyEntries(activeCycle.id);
       throw new Error(upsertErr.message);
     }
   };
 
   // Create New Cycle
   const createCycle = async (cycleData: Omit<Cycle, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
-    if (!user) throw new Error('Utente non autenticato');
+    if (!user) throw new Error('Per creare un ciclo, accedi prima con il tuo account.');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
@@ -169,7 +165,6 @@ export function useCycleData() {
 
     if (insertErr) throw new Error(insertErr.message);
 
-    // Create day 1 entry
     if (data) {
       await client.from('daily_entries').insert({
         cycle_id: data.id,
@@ -212,7 +207,7 @@ export function useCycleData() {
 
   // Import Legacy Cycle JSON
   const importLegacyCycle = async (legacy: LegacyCycleJSON) => {
-    if (!user) throw new Error('Utente non autenticato');
+    if (!user) throw new Error("Effettua prima l'accesso con la tua email per salvare i dati sul tuo database!");
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
@@ -220,19 +215,18 @@ export function useCycleData() {
     const cyclePayload = {
       user_id: user.id,
       name: legacy.name || 'Ciclo Storico',
-      cycle_number: legacy.cycle_number || 1,
-      year: legacy.year || new Date().getFullYear(),
+      cycle_number: Number(legacy.cycle_number) || 1,
+      year: Number(legacy.year) || new Date().getFullYear(),
       month_str: legacy.month_str || '',
       start_date: startDate,
-      bbt_method: legacy.bbt_method || 'Vaginale',
-      shortest_cycle: legacy.shortest_cycle || null,
+      bbt_method: (legacy.bbt_method as any) || 'Vaginale',
+      shortest_cycle: legacy.shortest_cycle ? Number(legacy.shortest_cycle) : null,
       teacher_code: legacy.teacher_code || '',
       protocol_number: legacy.protocol_number || '',
       sigla: legacy.sigla || '',
       is_active: false,
     };
 
-    // Upsert cycle
     const { data: cycle, error: cycleErr } = await client
       .from('cycles')
       .upsert(cyclePayload, { onConflict: 'user_id,cycle_number,year' })
@@ -242,7 +236,12 @@ export function useCycleData() {
     if (cycleErr) throw new Error(`Errore creazione ciclo: ${cycleErr.message}`);
 
     if (cycle && legacy.daily_entries) {
-      const dailyRows = Object.values(legacy.daily_entries).map(raw => {
+      const dailyRows: any[] = [];
+
+      for (const [key, raw] of Object.entries(legacy.daily_entries)) {
+        const cycleDay = Number(raw.cycle_day || key);
+        if (isNaN(cycleDay) || cycleDay < 1) continue;
+
         let bbtVal: number | null = null;
         if (raw.bbt !== undefined && raw.bbt !== null && raw.bbt !== '') {
           const parsed = parseFloat(String(raw.bbt).replace(',', '.'));
@@ -251,12 +250,14 @@ export function useCycleData() {
           }
         }
 
-        const dateStr = raw.date ? (typeof raw.date === 'string' ? raw.date.split('T')[0] : startDate) : (calculateDateForDay(startDate, raw.cycle_day) || startDate);
+        const dateStr = raw.date
+          ? (typeof raw.date === 'string' ? raw.date.split('T')[0] : startDate)
+          : (calculateDateForDay(startDate, cycleDay) || startDate);
 
-        return {
+        dailyRows.push({
           cycle_id: cycle.id,
           user_id: user.id,
-          cycle_day: Number(raw.cycle_day),
+          cycle_day: cycleDay,
           entry_date: dateStr,
           bbt: bbtVal,
           bbt_time: raw.time || null,
@@ -270,8 +271,8 @@ export function useCycleData() {
           cervix_position: raw.cervix_position || null,
           intercourse: raw.intercourse || null,
           notes: raw.notes || null,
-        };
-      });
+        });
+      }
 
       if (dailyRows.length > 0) {
         const { error: entriesErr } = await client
