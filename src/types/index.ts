@@ -82,7 +82,32 @@ export interface LegacyCycleJSON {
   }>;
 }
 
-export type ActiveTab = 'today' | 'chart' | 'cycles' | 'analysis' | 'settings';
+export type ActiveTab = 'today' | 'calendar' | 'chart' | 'analysis' | 'cycles' | 'settings';
+
+export interface CalendarDayData {
+  date: string; // YYYY-MM-DD
+  dayNumber: number; // day of month
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  cycleId?: string;
+  cycleNumber?: number;
+  cycleDay?: number;
+  entry?: DailyEntry;
+  // Predictions
+  isPredictedPeriod?: boolean;
+  isPredictedOvulation?: boolean;
+  isPredictedFertileWindow?: boolean;
+  predictionConfidence?: 'high' | 'medium' | 'low';
+}
+
+export interface CycleStatistics {
+  averageCycleLength: number; // e.g. 28
+  averagePeriodLength: number; // e.g. 5
+  averageLutealPhase: number; // e.g. 14
+  completedCyclesCount: number;
+  minCycleLength: number | null;
+  maxCycleLength: number | null;
+}
 
 export interface SymptothermalEvaluation {
   hasOvulationDetected: boolean;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActiveTab } from '../../types';
-import { Calendar, LineChart, BookOpen, Settings, Sparkles } from 'lucide-react';
+import { Sun, CalendarDays, LineChart, BookOpen, Settings, Sparkles } from 'lucide-react';
 
 interface BottomNavProps {
   activeTab: ActiveTab;
@@ -9,7 +9,8 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) => {
   const tabs = [
-    { id: 'today' as ActiveTab, label: 'Oggi', icon: Calendar },
+    { id: 'today' as ActiveTab, label: 'Oggi', icon: Sun },
+    { id: 'calendar' as ActiveTab, label: 'Calendario', icon: CalendarDays },
     { id: 'chart' as ActiveTab, label: 'Grafico', icon: LineChart },
     { id: 'analysis' as ActiveTab, label: 'Analisi AI', icon: Sparkles },
     { id: 'cycles' as ActiveTab, label: 'Cicli', icon: BookOpen },

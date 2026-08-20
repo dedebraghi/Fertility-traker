@@ -12,7 +12,8 @@ export function useCycleData() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const activeCycle = cycles.find(c => c.id === activeCycleId) || null;
+  const [allEntriesByDate, setAllEntriesByDate] = useState<Record<string, DailyEntry>>({});
+  const [allEntriesList, setAllEntriesList] = useState<DailyEntry[]>([]);
 
   // 1. Fetch Cycles
   const fetchCycles = useCallback(async () => {
@@ -20,6 +21,8 @@ export function useCycleData() {
       setCycles([]);
       setActiveCycleId(null);
       setDailyEntries({});
+      setAllEntriesByDate({});
+      setAllEntriesList([]);
       setLoading(false);
       return;
     }
@@ -62,7 +65,40 @@ export function useCycleData() {
     }
   }, [user]);
 
-  // 2. Fetch Daily Entries for Active Cycle
+  // 2. Fetch All Daily Entries for User (for calendar & stats)
+  const fetchAllDailyEntries = useCallback(async () => {
+    const client = getSupabaseClient();
+    if (!client || !user) return;
+
+    try {
+      const { data, error: entriesErr } = await client
+        .from('daily_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('entry_date', { ascending: true });
+
+      if (entriesErr) throw entriesErr;
+
+      const list: DailyEntry[] = (data || []).map((entry: DailyEntry) => ({
+        ...entry,
+        bbt: entry.bbt !== null && entry.bbt !== undefined ? Number(entry.bbt) : null,
+      }));
+
+      const mapByDate: Record<string, DailyEntry> = {};
+      list.forEach((e) => {
+        if (e.entry_date) {
+          mapByDate[e.entry_date] = e;
+        }
+      });
+
+      setAllEntriesList(list);
+      setAllEntriesByDate(mapByDate);
+    } catch (err: any) {
+      console.error('Error fetching all daily entries:', err);
+    }
+  }, [user]);
+
+  // 3. Fetch Daily Entries for Active Cycle
   const fetchDailyEntries = useCallback(async (cycleId: string) => {
     const client = getSupabaseClient();
     if (!client || !user) return;
@@ -96,6 +132,12 @@ export function useCycleData() {
   }, [fetchCycles]);
 
   useEffect(() => {
+    if (user) {
+      fetchAllDailyEntries();
+    }
+  }, [user, fetchAllDailyEntries]);
+
+  useEffect(() => {
     if (activeCycleId) {
       fetchDailyEntries(activeCycleId);
     } else {
@@ -103,7 +145,7 @@ export function useCycleData() {
     }
   }, [activeCycleId, fetchDailyEntries]);
 
-  // Save / Update Daily Entry
+  // Save / Update Daily Entry for active cycle
   const saveDailyEntry = async (entry: Partial<DailyEntry> & { cycle_day: number }) => {
     if (!user || !activeCycle) throw new Error('Nessun ciclo attivo o utente non autenticato');
     const client = getSupabaseClient();
@@ -130,9 +172,16 @@ export function useCycleData() {
       notes: entry.notes ?? null,
     };
 
+    const updatedEntry = { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry;
+
     setDailyEntries(prev => ({
       ...prev,
-      [entry.cycle_day]: { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry,
+      [entry.cycle_day]: updatedEntry,
+    }));
+
+    setAllEntriesByDate(prev => ({
+      ...prev,
+      [entryDate]: updatedEntry,
     }));
 
     const { error: upsertErr } = await client
@@ -142,6 +191,89 @@ export function useCycleData() {
     if (upsertErr) {
       console.error('Error saving entry:', upsertErr);
       await fetchDailyEntries(activeCycle.id);
+      await fetchAllDailyEntries();
+      throw new Error(upsertErr.message);
+    }
+  };
+
+  // Save / Update Daily Entry for an arbitrary date (used in Calendar)
+  const saveEntryForDate = async (entryDate: string, entryData: Partial<DailyEntry>) => {
+    if (!user) throw new Error('Per salvare i dati, accedi prima con il tuo account.');
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Database Supabase non connesso');
+
+    // Find the right cycle for this date
+    const sortedCycles = [...cycles]
+      .filter(c => Boolean(c.start_date))
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+    let targetCycle: Cycle | null = null;
+    const targetDateObj = new Date(entryDate);
+
+    for (let i = sortedCycles.length - 1; i >= 0; i--) {
+      const c = sortedCycles[i];
+      if (new Date(c.start_date) <= targetDateObj) {
+        targetCycle = c;
+        break;
+      }
+    }
+
+    if (!targetCycle) {
+      targetCycle = activeCycle || sortedCycles[0] || null;
+    }
+
+    if (!targetCycle) {
+      // If no cycle exists at all, create first cycle on this date
+      targetCycle = await startFirstCycle(entryDate);
+    }
+
+    const calculatedCycleDay = calculateDayFromDate(targetCycle.start_date, entryDate) || 1;
+    const cycleDay = entryData.cycle_day !== undefined && entryData.cycle_day > 0 
+      ? entryData.cycle_day 
+      : Math.max(1, calculatedCycleDay);
+
+    const payload = {
+      cycle_id: targetCycle.id,
+      user_id: user.id,
+      cycle_day: cycleDay,
+      entry_date: entryDate,
+      bbt: entryData.bbt !== null && entryData.bbt !== undefined ? Number(entryData.bbt) : null,
+      bbt_time: entryData.bbt_time ?? null,
+      menstruation: entryData.menstruation ?? null,
+      sensation: entryData.sensation ?? null,
+      mucus_qty_symbol: entryData.mucus_qty_symbol ?? null,
+      mucus_qty: entryData.mucus_qty ?? null,
+      mucus_char: entryData.mucus_char ?? null,
+      cervix_consistency: entryData.cervix_consistency ?? null,
+      cervix_opening: entryData.cervix_opening ?? null,
+      cervix_position: entryData.cervix_position ?? null,
+      intercourse: entryData.intercourse ?? null,
+      notes: entryData.notes ?? null,
+    };
+
+    const updatedEntry = { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry;
+
+    // Update in memory
+    setAllEntriesByDate(prev => ({
+      ...prev,
+      [entryDate]: updatedEntry,
+    }));
+
+    if (activeCycle && targetCycle.id === activeCycle.id) {
+      setDailyEntries(prev => ({
+        ...prev,
+        [cycleDay]: updatedEntry,
+      }));
+    }
+
+    const { error: upsertErr } = await client
+      .from('daily_entries')
+      .upsert(payload, { onConflict: 'cycle_id,cycle_day' });
+
+    if (upsertErr) {
+      console.error('Error saving entry for date:', upsertErr);
+      await fetchAllDailyEntries();
+      if (activeCycle) await fetchDailyEntries(activeCycle.id);
       throw new Error(upsertErr.message);
     }
   };
@@ -401,10 +533,14 @@ export function useCycleData() {
     activeCycleId,
     setActiveCycleId,
     dailyEntries,
+    allEntriesByDate,
+    allEntriesList,
     loading,
     error,
     refreshCycles: fetchCycles,
+    refreshAllDailyEntries: fetchAllDailyEntries,
     saveDailyEntry,
+    saveEntryForDate,
     transitionToNewCycle,
     startFirstCycle,
     createCycle,

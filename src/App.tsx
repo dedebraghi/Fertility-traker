@@ -6,6 +6,7 @@ import { ActiveTab, Cycle } from './types';
 import { Header } from './components/layout/Header';
 import { BottomNav } from './components/layout/BottomNav';
 import { TodayView } from './components/today/TodayView';
+import { CalendarView } from './components/calendar/CalendarView';
 import { ChartView } from './components/chart/ChartView';
 import { AnalysisView } from './components/analysis/AnalysisView';
 import { CyclesListView } from './components/cycles/CyclesListView';
@@ -21,7 +22,10 @@ const MainContent: React.FC = () => {
     activeCycleId,
     setActiveCycleId,
     dailyEntries,
+    allEntriesByDate,
+    allEntriesList,
     saveDailyEntry,
+    saveEntryForDate,
     transitionToNewCycle,
     startFirstCycle,
     createCycle,
@@ -91,6 +95,16 @@ const MainContent: React.FC = () => {
             onTransitionToNewCycle={transitionToNewCycle}
             onStartFirstCycle={startFirstCycle}
             onOpenNewCycleModal={handleOpenNewCycle}
+          />
+        )}
+
+        {activeTab === 'calendar' && (
+          <CalendarView
+            cycles={cycles}
+            activeCycle={activeCycle}
+            allEntriesByDate={allEntriesByDate}
+            allEntriesList={allEntriesList}
+            onSaveEntryForDate={saveEntryForDate}
           />
         )}
 
