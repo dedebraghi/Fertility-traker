@@ -10,21 +10,21 @@ export const DEFAULT_GEMINI_API_KEY =
 
 export const AVAILABLE_MODELS = [
   { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Predefinito, Ultima Generazione)' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Veloce & Affidabile)' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Fallback Leggero)' },
 ];
 
 export const DEFAULT_MODEL = 'gemini-3.6-flash';
-export const FALLBACK_MODEL = 'gemini-2.5-flash';
+export const FALLBACK_MODEL = 'gemini-3.6-flash';
 
 export function getGeminiSettings(): GeminiSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      // Migrate / sanitize away from deprecated models (e.g. gemini-2.0-flash or gemini-2.5-flash)
+      const validModel = parsed.selectedModel === 'gemini-3.6-flash' ? 'gemini-3.6-flash' : DEFAULT_MODEL;
       return {
         apiKey: parsed.apiKey || DEFAULT_GEMINI_API_KEY,
-        selectedModel: parsed.selectedModel || DEFAULT_MODEL,
+        selectedModel: validModel,
         includeNotes: parsed.includeNotes ?? true,
       };
     }
@@ -105,10 +105,8 @@ export async function validateGeminiApiKey(apiKey: string, model: string = DEFAU
  * Direct call to Gemini REST API with automatic model fallback
  */
 async function callGeminiApi(apiKey: string, primaryModel: string, prompt: string): Promise<{ text: string; modelUsed: string }> {
-  const modelsToTry = [primaryModel];
-  if (primaryModel !== FALLBACK_MODEL) {
-    modelsToTry.push(FALLBACK_MODEL);
-  }
+  const effectiveModel = primaryModel === 'gemini-3.6-flash' ? 'gemini-3.6-flash' : DEFAULT_MODEL;
+  const modelsToTry = [effectiveModel];
 
   let lastError: Error | null = null;
 
