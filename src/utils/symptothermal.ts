@@ -358,28 +358,33 @@ export function estimateInterruptedCycles(
 export function isFirstDayOfPeriod(
   entryDateStr: string,
   menstruation: DailyEntry['menstruation'] | null | undefined,
-  entriesByDate: Record<string, DailyEntry>
+  entriesByDate: Record<string, DailyEntry> = {}
 ): boolean {
   if (!menstruation || !['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation)) {
     return false;
   }
   if (!entryDateStr) return false;
 
-  const [y, m, d] = entryDateStr.split('-').map(Number);
-  const prevDate = new Date(y, m - 1, d);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevYear = prevDate.getFullYear();
-  const prevMonth = String(prevDate.getMonth() + 1).padStart(2, '0');
-  const prevDay = String(prevDate.getDate()).padStart(2, '0');
-  const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`;
+  try {
+    const [y, m, d] = entryDateStr.split('-').map(Number);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) return false;
+    const prevDate = new Date(y, m - 1, d);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonth = String(prevDate.getMonth() + 1).padStart(2, '0');
+    const prevDay = String(prevDate.getDate()).padStart(2, '0');
+    const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`;
 
-  const prevEntry = entriesByDate[prevDateStr];
-  const prevHadMenstruation = Boolean(
-    prevEntry?.menstruation &&
-    ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(prevEntry.menstruation)
-  );
+    const prevEntry = (entriesByDate || {})[prevDateStr];
+    const prevHadMenstruation = Boolean(
+      prevEntry?.menstruation &&
+      ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(prevEntry.menstruation)
+    );
 
-  return !prevHadMenstruation;
+    return !prevHadMenstruation;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -391,7 +396,7 @@ export function calculateNextCycleNumberWithGap(
   avgCycleLength = 28
 ): number {
   if (!lastCycle) return 1;
-  if (!newStartDateStr || !lastCycle.start_date) return lastCycle.cycle_number + 1;
+  if (!newStartDateStr || !lastCycle.start_date) return (lastCycle.cycle_number || 0) + 1;
 
   try {
     const start = new Date(lastCycle.start_date);
@@ -405,7 +410,7 @@ export function calculateNextCycleNumberWithGap(
     const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / (avgCycleLength || 28)));
     return lastCycle.cycle_number + estimatedCyclesPassed;
   } catch {
-    return lastCycle.cycle_number + 1;
+    return (lastCycle.cycle_number || 0) + 1;
   }
 }
 
@@ -417,7 +422,7 @@ export function estimateCycleStartDateForLateEntry(
   entryDateStr: string,
   avgCycleLength = 28
 ): string {
-  if (!lastCycleStartDateStr || !entryDateStr) return entryDateStr;
+  if (!lastCycleStartDateStr || !entryDateStr) return entryDateStr || '';
 
   try {
     const start = new Date(lastCycleStartDateStr);
@@ -450,7 +455,7 @@ export function estimateCycleStartDateForLateEntry(
  */
 export function getEstimatedCycleForDate(
   dateStr: string,
-  cycles: { cycle_number: number; start_date: string; id?: string; is_active?: boolean }[],
+  cycles: { cycle_number: number; start_date: string; id?: string; is_active?: boolean }[] = [],
   avgCycleLength = 28
 ): {
   cycleNumber: number;
@@ -460,11 +465,11 @@ export function getEstimatedCycleForDate(
   existingCycleId?: string;
 } {
   if (!dateStr) {
-    return { cycleNumber: 1, startDate: dateStr, cycleDay: 1, isExistingCycle: false };
+    return { cycleNumber: 1, startDate: dateStr || '', cycleDay: 1, isExistingCycle: false };
   }
 
-  const validCycles = [...cycles]
-    .filter((c) => Boolean(c.start_date))
+  const validCycles = (cycles ? [...cycles] : [])
+    .filter((c) => Boolean(c && c.start_date))
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
   if (validCycles.length === 0) {
@@ -506,7 +511,7 @@ export function getEstimatedCycleForDate(
 
   // If beyond cycleLen, calculate intermediate estimated cycles
   const cyclesPassed = Math.floor((diffDays - 1) / cycleLen);
-  const estimatedCycleNumber = latestCycle.cycle_number + cyclesPassed;
+  const estimatedCycleNumber = (latestCycle.cycle_number || 1) + cyclesPassed;
   
   // Calculate start date of this estimated cycle
   const [y, m, d] = latestCycle.start_date.split('-').map(Number);
@@ -526,6 +531,7 @@ export function getEstimatedCycleForDate(
     isExistingCycle: false,
   };
 }
+
 
 
 

@@ -58,8 +58,8 @@ interface TodayViewProps {
 
 export const TodayView: React.FC<TodayViewProps> = ({
   activeCycle,
-  allCycles,
-  dailyEntries,
+  allCycles = [],
+  dailyEntries = {},
   onSaveEntry,
   onTransitionToNewCycle,
   onStartFirstCycle,
@@ -68,20 +68,21 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const todayISO = new Date().toISOString().split('T')[0];
 
   // Estimated cycle projection for today's date
-  const estToday = getEstimatedCycleForDate(todayISO, allCycles, 28);
+  const safeCycles = allCycles || [];
+  const estToday = getEstimatedCycleForDate(todayISO, safeCycles, 28);
   const calculatedDayToday = activeCycle ? calculateDayFromDate(activeCycle.start_date, todayISO) : null;
   const isCycleStale = Boolean(calculatedDayToday !== null && (calculatedDayToday > 50 || calculatedDayToday < 1));
 
   const currentCycleNumber = (activeCycle && !isCycleStale)
     ? activeCycle.cycle_number
-    : estToday.cycleNumber;
+    : (estToday?.cycleNumber || 1);
 
   const currentCycleStartDate = (activeCycle && !isCycleStale)
     ? activeCycle.start_date
-    : estToday.startDate;
+    : (estToday?.startDate || todayISO);
 
   // Selected cycle day (defaults to today's calculated/estimated cycle day)
-  const [selectedDay, setSelectedDay] = useState<number>(estToday.cycleDay || 1);
+  const [selectedDay, setSelectedDay] = useState<number>(estToday?.cycleDay || 1);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
@@ -294,10 +295,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
         sensation,
         mucus_qty_symbol: mucusQtySymbol,
         mucus_qty: mucusQty,
-        mucusChar,
-        cervixConsistency,
-        cervixOpening,
-        cervixPosition,
+        mucus_char: mucusChar,
+        cervix_consistency: cervixConsistency,
+        cervix_opening: cervixOpening,
+        cervix_position: cervixPosition,
         intercourse,
         notes,
       });
