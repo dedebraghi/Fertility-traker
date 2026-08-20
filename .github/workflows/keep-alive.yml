@@ -1,0 +1,31 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Esegue ogni 3 giorni alle ore 04:00 UTC (circa 05:00/06:00 in Italia)
+    - cron: '0 4 */3 * *'
+  workflow_dispatch: # Permette di testarlo manualmente con un pulsante da GitHub
+
+jobs:
+  ping-supabase:
+    name: Ping Supabase Database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://eastdfvddeawufnpxxbs.supabase.co' }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhc3RkZnZkZGVhd3VmbnB4eGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDk2ODcsImV4cCI6MjEwMjcyNTY4N30.axUmEOKGk1gWsRTzgr3q9rI2JS-LDdIPmb3l_5eYAuk' }}
+        run: |
+          echo "Sending keep-alive ping to Supabase..."
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "${SUPABASE_URL}/rest/v1/cycles?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          
+          echo "Supabase responded with HTTP status: $RESPONSE_CODE"
+          
+          if [ "$RESPONSE_CODE" -ge 200 ] && [ "$RESPONSE_CODE" -lt 300 ]; then
+            echo "✅ Ping riuscito con successo! Il database rimarrà attivo."
+          else
+            echo "⚠️ Attenzione: risposta inattesa ($RESPONSE_CODE)."
+            exit 1
+          fi
