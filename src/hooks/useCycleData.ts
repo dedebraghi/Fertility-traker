@@ -399,6 +399,9 @@ export function useCycleData() {
       return existingCycleSameStart;
     }
 
+    // Calculate progression cycle number
+    const nextNumber = options?.customCycleNumber || calculateNextCycleNumberWithGap(prevCycle, startDate);
+
     // Ensure cycle number is unique for this year
     const existingNumbersForYear = new Set(cycles.filter(c => c.year === calculatedYear).map(c => c.cycle_number));
     let safeNextNumber = Number(nextNumber);
