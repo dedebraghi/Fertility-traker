@@ -9,6 +9,7 @@ import {
   generateMultiCycleAnalysis,
 } from '../../lib/geminiService';
 import { evaluateSymptothermalStatus, computeDataFingerprint } from '../../utils/symptothermal';
+import { ReportMarkdownView } from './ReportMarkdownView';
 import {
   Sparkles,
   RefreshCw,
@@ -418,8 +419,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           </div>
 
           {/* Formatted Markdown Content */}
-          <div className="space-y-4 text-stone-700 text-sm leading-relaxed whitespace-pre-line">
-            {report.markdownContent}
+          <div className="pt-2">
+            <ReportMarkdownView content={report.markdownContent} />
           </div>
         </div>
       )}
