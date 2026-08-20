@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { LegacyDataImporter } from './LegacyDataImporter';
 import { LegacyCycleJSON } from '../../types';
+import {
+  getGeminiSettings,
+  saveGeminiSettings,
+  validateGeminiApiKey,
+  AVAILABLE_MODELS,
+  DEFAULT_MODEL,
+} from '../../lib/geminiService';
 import {
   User,
   LogOut,
@@ -12,6 +19,10 @@ import {
   Info,
   Smartphone,
   Download,
+  Check,
+  RefreshCw,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -28,6 +39,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isStandalone,
 }) => {
   const { user, logout } = useAuth();
+
+  const [geminiKey, setGeminiKey] = useState<string>('');
+  const [showKey, setShowKey] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  const [includeNotes, setIncludeNotes] = useState<boolean>(true);
+  const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
+  const [keyStatusMessage, setKeyStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    const settings = getGeminiSettings();
+    setGeminiKey(settings.apiKey);
+    setSelectedModel(settings.selectedModel);
+    setIncludeNotes(settings.includeNotes);
+  }, []);
+
+  const handleSaveAndTestGemini = async () => {
+    if (!geminiKey.trim()) {
+      setKeyStatusMessage({ type: 'error', text: 'Inserisci una chiave API prima di testare.' });
+      return;
+    }
+    setIsTestingKey(true);
+    setKeyStatusMessage(null);
+
+    const testRes = await validateGeminiApiKey(geminiKey.trim(), selectedModel);
+    setIsTestingKey(false);
+
+    if (testRes.success) {
+      saveGeminiSettings({
+        apiKey: geminiKey.trim(),
+        selectedModel,
+        includeNotes,
+      });
+      setKeyStatusMessage({ type: 'success', text: testRes.message });
+    } else {
+      setKeyStatusMessage({ type: 'error', text: testRes.message });
+    }
+  };
+
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+    saveGeminiSettings({
+      apiKey: geminiKey.trim(),
+      selectedModel: modelId,
+      includeNotes,
+    });
+  };
+
+  const handleToggleNotes = () => {
+    const newVal = !includeNotes;
+    setIncludeNotes(newVal);
+    saveGeminiSettings({
+      apiKey: geminiKey.trim(),
+      selectedModel,
+      includeNotes: newVal,
+    });
+  };
+
 
   return (
     <div className="space-y-6 max-w-lg mx-auto pb-24 fade-in">
@@ -124,7 +192,133 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 4. Legacy Data Importer (Only visible when user is logged in) */}
+      {/* 4. Assistente AI (Google Gemini) */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-nature-200/70 shadow-card space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-stone-900 text-sm">Assistente AI Sintotermico</h3>
+              <p className="text-[11px] text-stone-400">Google Gemini API (100% Gratuito)</p>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+            Free Tier
+          </span>
+        </div>
+
+        {/* API Key Input */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-stone-700 block">
+            Chiave API Google Gemini
+          </label>
+          <div className="flex gap-2">
+            <input
+              type={showKey ? 'text' : 'password'}
+              placeholder="Incolla chiave (es. AIzaSy...)"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              className="flex-1 px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-600 text-xs font-semibold transition-colors"
+            >
+              {showKey ? 'Nascondi' : 'Mostra'}
+            </button>
+            <button
+              type="button"
+              disabled={isTestingKey}
+              onClick={handleSaveAndTestGemini}
+              className="px-4 py-2 rounded-xl bg-nature-700 hover:bg-nature-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {isTestingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              <span>Testa & Salva</span>
+            </button>
+          </div>
+
+          {keyStatusMessage && (
+            <p
+              className={`text-xs p-2.5 rounded-xl border flex items-center gap-1.5 ${
+                keyStatusMessage.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-red-50 text-red-800 border-red-200'
+              }`}
+            >
+              {keyStatusMessage.type === 'success' ? (
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              )}
+              <span>{keyStatusMessage.text}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Model Selector */}
+        <div className="space-y-1.5 pt-2 border-t border-stone-100">
+          <label className="text-xs font-semibold text-stone-700 block">
+            Modello AI Preferito
+          </label>
+          <select
+            value={selectedModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="w-full px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {AVAILABLE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-[10px] text-stone-400">
+            In caso di superamento dei limiti di quota temporanei, l'app effettua automaticamente il fallback sui modelli leggeri.
+          </p>
+        </div>
+
+        {/* Toggle Include Notes */}
+        <div className="flex items-center justify-between pt-2 border-t border-stone-100">
+          <div>
+            <span className="text-xs font-semibold text-stone-700 block">
+              Includi note di disturbo nell'analisi
+            </span>
+            <span className="text-[10px] text-stone-400">
+              Permette a Gemini di valutare febbre, stress o orari anomali.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleToggleNotes}
+            className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
+              includeNotes ? 'bg-nature-600' : 'bg-stone-200'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                includeNotes ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Free API Key Guide Link */}
+        <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs text-amber-900">
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-semibold hover:underline"
+          >
+            <span>Come ottenere la chiave gratuita su Google AI Studio</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      </div>
+
+      {/* 5. Legacy Data Importer (Only visible when user is logged in) */}
       {user && <LegacyDataImporter onImport={onImportLegacy} />}
 
       {/* 5. Guida Sintotermica Rapida CAMEN */}

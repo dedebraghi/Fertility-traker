@@ -7,6 +7,7 @@ import { Header } from './components/layout/Header';
 import { BottomNav } from './components/layout/BottomNav';
 import { TodayView } from './components/today/TodayView';
 import { ChartView } from './components/chart/ChartView';
+import { AnalysisView } from './components/analysis/AnalysisView';
 import { CyclesListView } from './components/cycles/CyclesListView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AuthModal } from './components/auth/AuthModal';
@@ -93,6 +94,15 @@ const MainContent: React.FC = () => {
             activeCycle={activeCycle}
             dailyEntries={dailyEntries}
             onSelectDayForEdit={handleSelectDayForEdit}
+          />
+        )}
+
+        {activeTab === 'analysis' && (
+          <AnalysisView
+            activeCycle={activeCycle}
+            dailyEntries={dailyEntries}
+            allCycles={cycles}
+            onNavigateToSettings={() => setActiveTab('settings')}
           />
         )}
 

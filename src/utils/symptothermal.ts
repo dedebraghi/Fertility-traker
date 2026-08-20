@@ -89,3 +89,174 @@ export const CERVIX_POSITION_LABELS: Record<string, { label: string; desc: strin
   M: { label: 'Media (M)', desc: 'Posizione intermedia' },
   A: { label: 'Alta (A)', desc: 'Profonda / difficile da raggiungere' },
 };
+
+import { DailyEntry, SymptothermalEvaluation } from '../types';
+
+/**
+ * Computes a simple hash / fingerprint of daily entries to detect when data has changed.
+ */
+export function computeDataFingerprint(entries: Record<number, DailyEntry>): string {
+  const sortedDays = Object.keys(entries).map(Number).sort((a, b) => a - b);
+  const representation = sortedDays.map((d) => {
+    const e = entries[d];
+    if (!e) return '';
+    return `${d}:${e.bbt ?? ''}:${e.bbt_time ?? ''}:${e.menstruation ?? ''}:${e.sensation ?? ''}:${e.mucus_qty_symbol ?? ''}:${e.mucus_char ?? ''}:${e.cervix_consistency ?? ''}:${e.cervix_opening ?? ''}:${e.cervix_position ?? ''}:${e.notes ?? ''}`;
+  }).join('|');
+
+  // Simple string hash
+  let hash = 0;
+  for (let i = 0; i < representation.length; i++) {
+    const chr = representation.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; // Convert to 32bit integer
+  }
+  return `${hash}_${sortedDays.length}`;
+}
+
+/**
+ * Checks if a daily entry has fertile mucus characteristics (CAMEN / Roetzer).
+ */
+export function isFertileMucusEntry(entry?: DailyEntry | null): boolean {
+  if (!entry) return false;
+  if (entry.sensation === 'L' || entry.sensation === 'B') return true;
+  if (entry.mucus_qty_symbol === '*') return true;
+  if (entry.mucus_char && /filante|trasparente|chiara|uovo|elastico/i.test(entry.mucus_char)) return true;
+  return false;
+}
+
+/**
+ * Evaluates CAMEN / Roetzer symptothermal status deterministically:
+ * - 6 low temperature days
+ * - Coverline (highest of the 6 low days)
+ * - 3 consecutive high temperatures (+0.20°C on 3rd or 4th day exception)
+ * - Mucus peak day + 3 post-peak days
+ * - Closure of fertile window
+ */
+export function evaluateSymptothermalStatus(entries: Record<number, DailyEntry>): SymptothermalEvaluation {
+  const result: SymptothermalEvaluation = {
+    hasOvulationDetected: false,
+    coverline: null,
+    lowTempsDays: [],
+    highTempsDays: [],
+    thirdHighDay: null,
+    mucusPeakDay: null,
+    mucusPostPeakDays: [],
+    cervixPeakDay: null,
+    fertileWindowClosedDay: null,
+    follicularPhaseLength: null,
+    lutealPhaseLength: null,
+    notesSummary: [],
+  };
+
+  const days = Object.keys(entries).map(Number).sort((a, b) => a - b);
+  if (days.length === 0) return result;
+
+  const maxDay = Math.max(...days);
+
+  // 1. Find Mucus Peak (ultimo giorno con caratteristiche fertili seguito da viraggio)
+  let bestMucusPeak: number | null = null;
+  for (let d = 1; d <= maxDay; d++) {
+    const entry = entries[d];
+    if (isFertileMucusEntry(entry)) {
+      // Check if subsequent days are dry/infertile
+      const next1 = entries[d + 1];
+      const next2 = entries[d + 2];
+      const next3 = entries[d + 3];
+
+      const isFollowedByDrying =
+        (!next1 || !isFertileMucusEntry(next1)) &&
+        (!next2 || !isFertileMucusEntry(next2)) &&
+        (!next3 || !isFertileMucusEntry(next3));
+
+      if (isFollowedByDrying || d === maxDay) {
+        bestMucusPeak = d;
+      }
+    }
+  }
+
+  if (bestMucusPeak !== null) {
+    result.mucusPeakDay = bestMucusPeak;
+    result.mucusPostPeakDays = [bestMucusPeak + 1, bestMucusPeak + 2, bestMucusPeak + 3].filter((d) => d <= maxDay);
+  }
+
+  // 2. Find Cervix Peak (Soft, Open, High)
+  let bestCervixPeak: number | null = null;
+  for (let d = 1; d <= maxDay; d++) {
+    const entry = entries[d];
+    if (entry && (entry.cervix_consistency === 'S' || entry.cervix_opening === 'A' || entry.cervix_position === 'A')) {
+      bestCervixPeak = d;
+    }
+  }
+  result.cervixPeakDay = bestCervixPeak;
+
+  // 3. Find Thermal Shift (Regola 3 su 6 di Roetzer/CAMEN)
+  // We look for a 1st high temp day 'h1' where previous 6 valid temps are lower
+  const validTempDays = days.filter((d) => entries[d]?.bbt !== null && typeof entries[d]?.bbt === 'number');
+
+  for (let i = 6; i < validTempDays.length; i++) {
+    const h1Day = validTempDays[i];
+    const prev6Days = validTempDays.slice(i - 6, i);
+    const prev6Temps = prev6Days.map((d) => entries[d].bbt as number);
+    const coverlineVal = Math.round(Math.max(...prev6Temps) * 100) / 100;
+
+    const t1 = entries[h1Day]?.bbt as number;
+    if (t1 <= coverlineVal) continue;
+
+    // Check next consecutive high days
+    const h2Day = validTempDays[i + 1];
+    const h3Day = validTempDays[i + 2];
+    const h4Day = validTempDays[i + 3];
+
+    if (h2Day && h3Day) {
+      const t2 = entries[h2Day]?.bbt as number;
+      const t3 = entries[h3Day]?.bbt as number;
+
+      // Standard Roetzer Rule: t1 > coverline, t2 > coverline, t3 >= coverline + 0.20
+      const isStandardConfirmed = t1 > coverlineVal && t2 > coverlineVal && t3 >= Math.round((coverlineVal + 0.20) * 100) / 100;
+
+      // Exception 1: t1, t2, t3 > coverline, but t3 < coverline + 0.20 -> 4th day t4 > coverline confirms
+      const isException1Confirmed = t1 > coverlineVal && t2 > coverlineVal && t3 > coverlineVal && h4Day && (entries[h4Day]?.bbt as number) > coverlineVal;
+
+      // Exception 2: one of t1,t2,t3 falls on or below coverline, but 4th day t4 >= coverline + 0.20
+      const isException2Confirmed = h4Day && (entries[h4Day]?.bbt as number) >= Math.round((coverlineVal + 0.20) * 100) / 100;
+
+      if (isStandardConfirmed || isException1Confirmed || isException2Confirmed) {
+        result.hasOvulationDetected = true;
+        result.coverline = coverlineVal;
+        result.lowTempsDays = prev6Days;
+        result.highTempsDays = isException1Confirmed || isException2Confirmed ? [h1Day, h2Day, h3Day, h4Day!] : [h1Day, h2Day, h3Day];
+        result.thirdHighDay = isException1Confirmed || isException2Confirmed ? h4Day! : h3Day;
+
+        // Double check: Fertile window closes the evening of 3rd high temp (or 4th if exception)
+        // OR 3rd full day after mucus peak (which is evening of Peak+3 = start of post-fertile)
+        const thermalEndDay = result.thirdHighDay;
+        const mucusEndDay = result.mucusPeakDay !== null ? result.mucusPeakDay + 3 : null;
+
+        if (mucusEndDay !== null) {
+          result.fertileWindowClosedDay = Math.max(thermalEndDay, mucusEndDay);
+        } else {
+          result.fertileWindowClosedDay = thermalEndDay;
+        }
+
+        result.follicularPhaseLength = h1Day - 1;
+        if (maxDay >= thermalEndDay) {
+          result.lutealPhaseLength = maxDay - (h1Day - 1);
+        }
+        break;
+      }
+    }
+  }
+
+  // 4. Summarize notes & potential disturbances
+  const disturbanceNotes: string[] = [];
+  days.forEach((d) => {
+    const e = entries[d];
+    if (e?.notes && e.notes.trim().length > 0) {
+      disturbanceNotes.push(`Giorno ${d}: ${e.notes.trim()}`);
+    }
+  });
+  result.notesSummary = disturbanceNotes;
+
+  return result;
+}
+

@@ -82,4 +82,45 @@ export interface LegacyCycleJSON {
   }>;
 }
 
-export type ActiveTab = 'today' | 'chart' | 'cycles' | 'settings';
+export type ActiveTab = 'today' | 'chart' | 'cycles' | 'analysis' | 'settings';
+
+export interface SymptothermalEvaluation {
+  hasOvulationDetected: boolean;
+  coverline: number | null;
+  lowTempsDays: number[]; // the 6 days before the shift
+  highTempsDays: number[]; // the 3 (or 4) consecutive high days
+  thirdHighDay: number | null;
+  mucusPeakDay: number | null;
+  mucusPostPeakDays: number[]; // +1, +2, +3 days after peak
+  cervixPeakDay: number | null;
+  fertileWindowClosedDay: number | null; // the evening of this cycle day
+  follicularPhaseLength: number | null;
+  lutealPhaseLength: number | null;
+  notesSummary?: string[];
+}
+
+export interface AiAnalysisReport {
+  id: string;
+  cycleId: string;
+  cycleNumber: number;
+  scope: 'single' | 'multi';
+  generatedAt: string; // ISO date
+  dataFingerprint: string; // hash/checksum of entries used to detect changes
+  modelUsed: string;
+  evaluation: SymptothermalEvaluation;
+  markdownContent: string;
+  summaryStatus: {
+    ovulationConfirmed: boolean;
+    coverlineText: string;
+    peakDayText: string;
+    fertileWindowClosedText: string;
+    lutealLengthText: string;
+  };
+}
+
+export interface GeminiSettings {
+  apiKey: string;
+  selectedModel: string;
+  includeNotes: boolean;
+}
+
