@@ -356,7 +356,48 @@ export function useCycleData() {
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    // 1. Deactivate current active cycle if any
+    // If the active cycle was started within the last 5 days and user is setting the real start date,
+    // adjust the active cycle's start_date instead of creating an unwanted duplicate cycle
+    const diffDaysFromActiveStart = activeCycle ? calculateDayFromDate(activeCycle.start_date, startDate) : null;
+    const isAdjustingCurrentCycleStart = Boolean(
+      activeCycle && 
+      diffDaysFromActiveStart !== null && 
+      diffDaysFromActiveStart >= 0 && 
+      diffDaysFromActiveStart <= 5
+    );
+
+    if (isAdjustingCurrentCycleStart && activeCycle) {
+      // 1. Update active cycle's start_date
+      await client
+        .from('cycles')
+        .update({ start_date: startDate })
+        .eq('id', activeCycle.id);
+
+      // 2. Delete any old entry from previous start date if different
+      if (activeCycle.start_date !== startDate) {
+        await client
+          .from('daily_entries')
+          .delete()
+          .eq('cycle_id', activeCycle.id)
+          .eq('entry_date', activeCycle.start_date);
+      }
+
+      // 3. Upsert Day 1 entry on new start date
+      await client.from('daily_entries').upsert({
+        cycle_id: activeCycle.id,
+        user_id: user.id,
+        cycle_day: 1,
+        entry_date: startDate,
+        menstruation: options?.initialMenstruation || 'Flusso',
+      }, { onConflict: 'cycle_id,cycle_day' });
+
+      await fetchCycles();
+      await fetchAllDailyEntries();
+      await fetchDailyEntries(activeCycle.id);
+      return activeCycle;
+    }
+
+    // 1. Deactivate current active cycle if creating a brand new cycle
     if (activeCycle) {
       await client
         .from('cycles')
