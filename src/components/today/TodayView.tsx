@@ -6,22 +6,15 @@ import {
   calculateDateForDay,
   formatDateItalian,
   calculateDayFromDate,
-  estimateInterruptedCycles,
-  calculateNextCycleNumberWithGap,
-  estimateCycleStartDateForLateEntry,
-  isFirstDayOfPeriod,
+  getEstimatedCycleForDate,
 } from '../../utils/symptothermal';
 import {
   ChevronLeft,
   ChevronRight,
   Check,
-  Calendar as CalendarIcon,
   Sparkles,
-  PlusCircle,
-  AlertCircle,
   RotateCcw,
   Sparkle,
-  HelpCircle,
 } from 'lucide-react';
 
 interface TodayViewProps {
