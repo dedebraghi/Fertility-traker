@@ -22,6 +22,8 @@ const MainContent: React.FC = () => {
     setActiveCycleId,
     dailyEntries,
     saveDailyEntry,
+    transitionToNewCycle,
+    startFirstCycle,
     createCycle,
     updateCycle,
     deleteCycle,
@@ -83,8 +85,11 @@ const MainContent: React.FC = () => {
         {activeTab === 'today' && (
           <TodayView
             activeCycle={activeCycle}
+            allCycles={cycles}
             dailyEntries={dailyEntries}
             onSaveEntry={saveDailyEntry}
+            onTransitionToNewCycle={transitionToNewCycle}
+            onStartFirstCycle={startFirstCycle}
             onOpenNewCycleModal={handleOpenNewCycle}
           />
         )}
@@ -110,7 +115,10 @@ const MainContent: React.FC = () => {
           <CyclesListView
             cycles={cycles}
             activeCycleId={activeCycleId}
-            onSelectActiveCycle={setActiveCycleId}
+            onSelectActiveCycle={(id) => {
+              setActiveCycleId(id);
+              setActiveTab('chart');
+            }}
             onOpenNewCycleModal={handleOpenNewCycle}
             onOpenEditCycleModal={handleOpenEditCycle}
             onDeleteCycle={deleteCycle}

@@ -76,32 +76,35 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
       />
 
       {/* Top action header with New Cycle and Import JSON */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Storico Cicli</h2>
-          <p className="text-xs text-stone-500">Tutti i cicli registrati sul tuo account</p>
+          <h2 className="text-xl font-bold text-stone-900">Archivio Storico Cicli</h2>
+          <p className="text-xs text-stone-500">
+            I cicli si aprono e chiudono in automatico dalla schermata <strong>Oggi</strong>
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           {/* Import JSON Button */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-nature-100 hover:bg-nature-200/80 text-nature-800 font-bold text-xs transition-all active:scale-95 border border-nature-200/70"
-            title="Importa file JSON"
+            title="Importa file JSON storico"
           >
             <UploadCloud className="w-4 h-4 text-nature-700" />
             <span>Importa JSON</span>
           </button>
 
-          {/* New Cycle Button */}
+          {/* Secondary Manual Cycle Button */}
           <button
             type="button"
             onClick={onOpenNewCycleModal}
-            className="flex items-center gap-1 px-3.5 py-2 rounded-2xl bg-nature-600 hover:bg-nature-700 text-white font-bold text-xs shadow-soft transition-all active:scale-95"
+            className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs transition-all active:scale-95 border border-stone-200"
+            title="Aggiungi ciclo passato manualmente"
           >
-            <Plus className="w-4 h-4" />
-            <span>Nuovo</span>
+            <Plus className="w-4 h-4 text-stone-600" />
+            <span>+ Manuale</span>
           </button>
         </div>
       </div>
@@ -111,7 +114,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
           <Calendar className="w-10 h-10 text-stone-300 mx-auto mb-3" />
           <h3 className="font-bold text-stone-700 text-sm">Nessun ciclo presente</h3>
           <p className="text-xs text-stone-400 mt-1 mb-4">
-            Crea il tuo primo ciclo o importa i tuoi vecchi file JSON per iniziare.
+            Puoi iniziare direttamente dalla schermata "Oggi" o importare un archivio JSON pregresso.
           </p>
           <div className="flex items-center justify-center gap-2">
             <button
@@ -124,7 +127,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
               onClick={onOpenNewCycleModal}
               className="px-4 py-2 rounded-xl bg-nature-600 text-white font-bold text-xs shadow-soft"
             >
-              + Crea Nuovo
+              + Inserisci Ciclo Storico
             </button>
           </div>
         </div>
@@ -148,7 +151,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
                     onClick={() => onSelectActiveCycle(cycle.id)}
                     className="flex-1 cursor-pointer"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-stone-900 text-base">
                         Ciclo {cycle.cycle_number}
                       </h3>
@@ -157,22 +160,26 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
                           • {cycle.name}
                         </span>
                       )}
-                      {isActive && (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
-                          <Check className="w-3 h-3" /> Attivo
+                      {isActive ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
+                          <Check className="w-3 h-3" /> In Corso
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 text-[10px] font-bold">
+                          Archiviato
                         </span>
                       )}
                     </div>
 
-                    <div className="text-xs text-stone-500 mt-1.5 space-y-0.5">
+                    <div className="text-xs text-stone-500 mt-2 space-y-1">
                       <p>
                         Inizio: <strong className="text-stone-700">{cycle.start_date}</strong>
                         {cycle.month_str && <span> • Mesi: {cycle.month_str}</span>}
                         <span> • Anno: {cycle.year}</span>
                       </p>
                       <p className="text-[11px] text-stone-400">
-                        Metodo: {cycle.bbt_method}
-                        {cycle.shortest_cycle && ` • Ciclo min: ${cycle.shortest_cycle}gg`}
+                        Metodo BBT: {cycle.bbt_method}
+                        {cycle.shortest_cycle && ` • Ciclo più breve rif.: ${cycle.shortest_cycle}gg`}
                       </p>
                     </div>
                   </div>
@@ -182,7 +189,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
                       type="button"
                       onClick={() => onOpenEditCycleModal(cycle)}
                       className="p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
-                      title="Modifica informazioni"
+                      title="Modifica informazioni del ciclo"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -205,7 +212,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
                       onClick={() => onSelectActiveCycle(cycle.id)}
                       className="text-xs font-bold text-nature-600 hover:text-nature-700"
                     >
-                      Imposta come ciclo attivo →
+                      Visualizza o imposta come attivo →
                     </button>
                   </div>
                 )}

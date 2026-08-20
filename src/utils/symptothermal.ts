@@ -260,3 +260,95 @@ export function evaluateSymptothermalStatus(entries: Record<number, DailyEntry>)
   return result;
 }
 
+const MONTH_NAMES_IT = [
+  'GEN', 'FEB', 'MAR', 'APR', 'MAG', 'GIU',
+  'LUG', 'AGO', 'SET', 'OTT', 'NOV', 'DIC'
+];
+
+/**
+ * Generates month string representation (e.g. "AGO/SET") based on cycle start date.
+ */
+export function generateMonthStr(startDateStr: string): string {
+  if (!startDateStr) return '';
+  try {
+    const [y, m] = startDateStr.split('-').map(Number);
+    const mIdx = m - 1;
+    const nextMIdx = (mIdx + 1) % 12;
+    return `${MONTH_NAMES_IT[mIdx]}/${MONTH_NAMES_IT[nextMIdx]}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Calculates the shortest cycle (in days) from completed cycles in the last 12 months.
+ */
+export function calculateShortestCycleFromHistory(cycles: { start_date: string; is_active: boolean; shortest_cycle?: number | null }[], currentStartDateStr?: string): number | null {
+  if (!cycles || cycles.length === 0) return null;
+
+  const now = currentStartDateStr ? new Date(currentStartDateStr) : new Date();
+  const oneYearAgo = new Date(now);
+  oneYearAgo.setDate(oneYearAgo.getDate() - 365);
+
+  // Filter cycles from the last 12 months that are closed / have a duration
+  const sortedCycles = [...cycles]
+    .filter(c => Boolean(c.start_date))
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+  const lengths: number[] = [];
+
+  for (let i = 0; i < sortedCycles.length; i++) {
+    const curr = sortedCycles[i];
+    const currDate = new Date(curr.start_date);
+    if (currDate < oneYearAgo && i < sortedCycles.length - 1) continue;
+
+    // If next cycle exists, duration is difference in days
+    if (i < sortedCycles.length - 1) {
+      const nextDate = new Date(sortedCycles[i + 1].start_date);
+      const diffDays = Math.round((nextDate.getTime() - currDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 18 && diffDays <= 60) {
+        lengths.push(diffDays);
+      }
+    } else if (curr.shortest_cycle && curr.shortest_cycle > 0) {
+      lengths.push(curr.shortest_cycle);
+    }
+  }
+
+  if (lengths.length === 0) return null;
+  return Math.min(...lengths);
+}
+
+/**
+ * Checks if there was a significant gap between the last cycle and a new cycle,
+ * and calculates approximate months and estimated cycles.
+ */
+export function estimateInterruptedCycles(
+  lastCycleStartDateStr: string,
+  newStartDateStr: string,
+  avgCycleLength = 28
+): { daysPassed: number; monthsPassed: number; estimatedCyclesPassed: number; isSignificantGap: boolean } {
+  if (!lastCycleStartDateStr || !newStartDateStr) {
+    return { daysPassed: 0, monthsPassed: 0, estimatedCyclesPassed: 1, isSignificantGap: false };
+  }
+
+  try {
+    const start = new Date(lastCycleStartDateStr);
+    const target = new Date(newStartDateStr);
+    const diffTime = target.getTime() - start.getTime();
+    const daysPassed = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+    const monthsPassed = Math.max(0, Math.round(daysPassed / 30.4));
+    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / avgCycleLength));
+    const isSignificantGap = daysPassed > 45; // More than 45 days is a gap
+
+    return {
+      daysPassed,
+      monthsPassed,
+      estimatedCyclesPassed,
+      isSignificantGap,
+    };
+  } catch {
+    return { daysPassed: 0, monthsPassed: 0, estimatedCyclesPassed: 1, isSignificantGap: false };
+  }
+}
+
+

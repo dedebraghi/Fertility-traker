@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cycle, DailyEntry, LegacyCycleJSON } from '../types';
+import { Cycle, DailyEntry, LegacyCycleJSON, BbtMethod } from '../types';
 import { getSupabaseClient } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { calculateDateForDay } from '../utils/symptothermal';
+import { calculateDateForDay, generateMonthStr, calculateShortestCycleFromHistory } from '../utils/symptothermal';
 
 export function useCycleData() {
   const { user } = useAuth();
@@ -146,11 +146,110 @@ export function useCycleData() {
     }
   };
 
-  // Create New Cycle
+  // Transition to New Cycle (Automatic archive & create next)
+  const transitionToNewCycle = async (
+    startDate: string,
+    options?: {
+      customCycleNumber?: number;
+      customBbtMethod?: BbtMethod;
+      customShortestCycle?: number | null;
+      initialMenstruation?: DailyEntry['menstruation'];
+    }
+  ) => {
+    if (!user) throw new Error('Per iniziare un nuovo ciclo, accedi prima con il tuo account.');
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Database Supabase non connesso');
+
+    // 1. Deactivate current active cycle if any
+    if (activeCycle) {
+      await client
+        .from('cycles')
+        .update({ is_active: false })
+        .eq('id', activeCycle.id);
+    }
+
+    // 2. Prepare computed properties
+    const [y] = startDate.split('-').map(Number);
+    const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
+    const calculatedMonthStr = generateMonthStr(startDate);
+    const calculatedShortest = options?.customShortestCycle !== undefined 
+      ? options.customShortestCycle 
+      : calculateShortestCycleFromHistory(cycles, startDate);
+
+    const nextNumber = options?.customCycleNumber || (activeCycle ? activeCycle.cycle_number + 1 : (cycles.length + 1));
+    const bbtMethod = options?.customBbtMethod || activeCycle?.bbt_method || 'Vaginale';
+    const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
+
+    const payload = {
+      user_id: user.id,
+      name,
+      cycle_number: Number(nextNumber),
+      year: calculatedYear,
+      month_str: calculatedMonthStr,
+      start_date: startDate,
+      bbt_method: bbtMethod,
+      shortest_cycle: calculatedShortest,
+      teacher_code: activeCycle?.teacher_code || '',
+      protocol_number: activeCycle?.protocol_number || '',
+      sigla: activeCycle?.sigla || '',
+      is_active: true,
+    };
+
+    const { data: newCycle, error: insertErr } = await client
+      .from('cycles')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (insertErr) throw new Error(insertErr.message);
+
+    if (newCycle) {
+      // Day 1 entry with initial menstruation
+      await client.from('daily_entries').insert({
+        cycle_id: newCycle.id,
+        user_id: user.id,
+        cycle_day: 1,
+        entry_date: newCycle.start_date,
+        menstruation: options?.initialMenstruation || 'Flusso',
+      });
+
+      await fetchCycles();
+      setActiveCycleId(newCycle.id);
+    }
+
+    return newCycle;
+  };
+
+  // Start First Cycle for brand new user
+  const startFirstCycle = async (
+    startDate: string,
+    options?: {
+      name?: string;
+      bbtMethod?: BbtMethod;
+      shortestCycle?: number | null;
+    }
+  ) => {
+    return transitionToNewCycle(startDate, {
+      customCycleNumber: 1,
+      customBbtMethod: options?.bbtMethod || 'Vaginale',
+      customShortestCycle: options?.shortestCycle || null,
+      initialMenstruation: 'Flusso',
+    });
+  };
+
+  // Create New Cycle (Manual)
   const createCycle = async (cycleData: Omit<Cycle, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
     if (!user) throw new Error('Per creare un ciclo, accedi prima con il tuo account.');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
+
+    // Deactivate previous cycles if this new one is active
+    if (cycleData.is_active) {
+      await client
+        .from('cycles')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+    }
 
     const payload = {
       ...cycleData,
@@ -184,6 +283,14 @@ export function useCycleData() {
     if (!user) throw new Error('Utente non autenticato');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
+
+    if (updates.is_active) {
+      // Deactivate others
+      await client
+        .from('cycles')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+    }
 
     const { error: updateErr } = await client
       .from('cycles')
@@ -298,6 +405,8 @@ export function useCycleData() {
     error,
     refreshCycles: fetchCycles,
     saveDailyEntry,
+    transitionToNewCycle,
+    startFirstCycle,
     createCycle,
     updateCycle,
     deleteCycle,
