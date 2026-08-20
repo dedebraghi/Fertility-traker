@@ -274,8 +274,8 @@ export function buildMonthCalendar(
 
       if (candidateCycle) {
         const dayCalc = calculateDayFromDate(candidateCycle.start_date, dateIso);
-        // Only assign if within reasonable length (e.g. up to 60 days) or active cycle
-        if (dayCalc !== null && dayCalc >= 1 && (dayCalc <= 60 || candidateCycle.is_active)) {
+        // Only assign if within reasonable length (e.g. up to 50 days) and not a huge gap
+        if (dayCalc !== null && dayCalc >= 1 && dayCalc <= 50) {
           cycleId = candidateCycle.id;
           cycleNumber = candidateCycle.cycle_number;
           cycleDay = dayCalc;

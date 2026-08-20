@@ -20,7 +20,15 @@ interface CalendarViewProps {
   activeCycle: Cycle | null;
   allEntriesByDate: Record<string, DailyEntry>;
   allEntriesList: DailyEntry[];
-  onSaveEntryForDate: (entryDate: string, data: Partial<DailyEntry>) => Promise<void>;
+  onSaveEntryForDate: (
+    entryDate: string,
+    data: Partial<DailyEntry>,
+    options?: {
+      forceNewCycle?: boolean;
+      newCycleStartDate?: string;
+      isContinuationOfLongCycle?: boolean;
+    }
+  ) => Promise<void>;
 }
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
@@ -356,8 +364,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           setIsDetailModalOpen(false);
           setSelectedDayData(null);
         }}
-        onSaveEntry={async (date, data) => {
-          await onSaveEntryForDate(date, data);
+        onSaveEntry={async (date, data, options) => {
+          await onSaveEntryForDate(date, data, options);
           // refresh selected day state
           setSelectedDayData((prev) => {
             if (!prev) return null;

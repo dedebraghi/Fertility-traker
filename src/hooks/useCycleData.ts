@@ -2,7 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { Cycle, DailyEntry, LegacyCycleJSON, BbtMethod } from '../types';
 import { getSupabaseClient } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { calculateDateForDay, generateMonthStr, calculateShortestCycleFromHistory } from '../utils/symptothermal';
+import {
+  calculateDateForDay,
+  calculateDayFromDate,
+  generateMonthStr,
+  calculateShortestCycleFromHistory,
+  isFirstDayOfPeriod,
+  calculateNextCycleNumberWithGap,
+  estimateCycleStartDateForLateEntry,
+} from '../utils/symptothermal';
 
 export function useCycleData() {
   const { user } = useAuth();
@@ -148,8 +156,23 @@ export function useCycleData() {
   }, [activeCycleId, fetchDailyEntries]);
 
   // Save / Update Daily Entry for active cycle
-  const saveDailyEntry = async (entry: Partial<DailyEntry> & { cycle_day: number }) => {
-    if (!user || !activeCycle) throw new Error('Nessun ciclo attivo o utente non autenticato');
+  const saveDailyEntry = async (
+    entry: Partial<DailyEntry> & { cycle_day: number },
+    options?: {
+      forceNewCycle?: boolean;
+      newCycleStartDate?: string;
+      isContinuationOfLongCycle?: boolean;
+    }
+  ) => {
+    if (!user) throw new Error('Utente non autenticato');
+
+    // If options indicate starting a new cycle or custom date
+    if (options?.forceNewCycle || options?.newCycleStartDate) {
+      const entryDate = entry.entry_date || options.newCycleStartDate || (activeCycle ? calculateDateForDay(activeCycle.start_date, entry.cycle_day) : new Date().toISOString().split('T')[0]);
+      return saveEntryForDate(entryDate!, entry, options);
+    }
+
+    if (!activeCycle) throw new Error('Nessun ciclo attivo');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
@@ -198,35 +221,62 @@ export function useCycleData() {
     }
   };
 
-  // Save / Update Daily Entry for an arbitrary date (used in Calendar)
-  const saveEntryForDate = async (entryDate: string, entryData: Partial<DailyEntry>) => {
+  // Save / Update Daily Entry for an arbitrary date (used in Calendar / Smart Dialog)
+  const saveEntryForDate = async (
+    entryDate: string,
+    entryData: Partial<DailyEntry>,
+    options?: {
+      forceNewCycle?: boolean;
+      newCycleStartDate?: string;
+      isContinuationOfLongCycle?: boolean;
+    }
+  ) => {
     if (!user) throw new Error('Per salvare i dati, accedi prima con il tuo account.');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    // Find the right cycle for this date
+    // Find all valid cycles sorted by date
     const sortedCycles = [...cycles]
       .filter(c => Boolean(c.start_date))
       .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
+    // Check if this entry is the first day of a period flow
+    const isFirstMenstDay = isFirstDayOfPeriod(entryDate, entryData.menstruation, allEntriesByDate);
+
     let targetCycle: Cycle | null = null;
     const targetDateObj = new Date(entryDate);
 
-    for (let i = sortedCycles.length - 1; i >= 0; i--) {
-      const c = sortedCycles[i];
-      if (new Date(c.start_date) <= targetDateObj) {
-        targetCycle = c;
-        break;
+    // If it's the first day of a period (and not explicitly forced otherwise) or forceNewCycle is true,
+    // we start a new cycle starting on this date (or custom start date).
+    if ((isFirstMenstDay && !options?.isContinuationOfLongCycle) || options?.forceNewCycle) {
+      const newStartDate = options?.newCycleStartDate || entryDate;
+      const prevCycle = sortedCycles.filter(c => new Date(c.start_date) < new Date(newStartDate)).pop() || activeCycle || null;
+      const calculatedCycleNum = calculateNextCycleNumberWithGap(prevCycle, newStartDate);
+
+      targetCycle = await transitionToNewCycle(newStartDate, {
+        customCycleNumber: calculatedCycleNum,
+        initialMenstruation: entryData.menstruation || undefined,
+      });
+    } else {
+      // Find the most recent cycle started on or before this date
+      for (let i = sortedCycles.length - 1; i >= 0; i--) {
+        const c = sortedCycles[i];
+        if (new Date(c.start_date) <= targetDateObj) {
+          targetCycle = c;
+          break;
+        }
       }
-    }
 
-    if (!targetCycle) {
-      targetCycle = activeCycle || sortedCycles[0] || null;
-    }
+      if (!targetCycle) {
+        targetCycle = activeCycle || sortedCycles[0] || null;
+      }
 
-    if (!targetCycle) {
-      // If no cycle exists at all, create first cycle on this date
-      targetCycle = await startFirstCycle(entryDate);
+      // If no cycle exists, start first cycle
+      if (!targetCycle) {
+        targetCycle = await startFirstCycle(entryDate, {
+          bbtMethod: 'Vaginale',
+        });
+      }
     }
 
     const calculatedCycleDay = calculateDayFromDate(targetCycle.start_date, entryDate) || 1;
@@ -310,7 +360,13 @@ export function useCycleData() {
       ? options.customShortestCycle 
       : calculateShortestCycleFromHistory(cycles, startDate);
 
-    const nextNumber = options?.customCycleNumber || (activeCycle ? activeCycle.cycle_number + 1 : (cycles.length + 1));
+    // Calculate progression cycle number factoring in estimated gaps if not explicitly passed
+    const sortedCycles = [...cycles]
+      .filter(c => Boolean(c.start_date))
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+    const prevCycle = sortedCycles.filter(c => new Date(c.start_date) < new Date(startDate)).pop() || activeCycle || null;
+
+    const nextNumber = options?.customCycleNumber || calculateNextCycleNumberWithGap(prevCycle, startDate);
     const bbtMethod = options?.customBbtMethod || activeCycle?.bbt_method || 'Vaginale';
     const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
 

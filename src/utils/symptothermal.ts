@@ -351,4 +351,98 @@ export function estimateInterruptedCycles(
   }
 }
 
+/**
+ * Checks if a given date with menstruation is the FIRST day of the period flow
+ * (i.e. not immediately preceded by menstruation on the previous day).
+ */
+export function isFirstDayOfPeriod(
+  entryDateStr: string,
+  menstruation: DailyEntry['menstruation'] | null | undefined,
+  entriesByDate: Record<string, DailyEntry>
+): boolean {
+  if (!menstruation || !['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation)) {
+    return false;
+  }
+  if (!entryDateStr) return false;
+
+  const [y, m, d] = entryDateStr.split('-').map(Number);
+  const prevDate = new Date(y, m - 1, d);
+  prevDate.setDate(prevDate.getDate() - 1);
+  const prevYear = prevDate.getFullYear();
+  const prevMonth = String(prevDate.getMonth() + 1).padStart(2, '0');
+  const prevDay = String(prevDate.getDate()).padStart(2, '0');
+  const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`;
+
+  const prevEntry = entriesByDate[prevDateStr];
+  const prevHadMenstruation = Boolean(
+    prevEntry?.menstruation &&
+    ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(prevEntry.menstruation)
+  );
+
+  return !prevHadMenstruation;
+}
+
+/**
+ * Calculates the appropriate next cycle number by factoring in estimated skipped cycles across a gap.
+ */
+export function calculateNextCycleNumberWithGap(
+  lastCycle: { cycle_number: number; start_date: string } | null,
+  newStartDateStr: string,
+  avgCycleLength = 28
+): number {
+  if (!lastCycle) return 1;
+  if (!newStartDateStr || !lastCycle.start_date) return lastCycle.cycle_number + 1;
+
+  try {
+    const start = new Date(lastCycle.start_date);
+    const target = new Date(newStartDateStr);
+    const diffTime = target.getTime() - start.getTime();
+    const daysPassed = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (daysPassed <= 0) return lastCycle.cycle_number;
+    if (daysPassed <= 45) return lastCycle.cycle_number + 1;
+
+    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / (avgCycleLength || 28)));
+    return lastCycle.cycle_number + estimatedCyclesPassed;
+  } catch {
+    return lastCycle.cycle_number + 1;
+  }
+}
+
+/**
+ * Estimates the plausible start date of the current cycle when user logs data late without recording menstruation.
+ */
+export function estimateCycleStartDateForLateEntry(
+  lastCycleStartDateStr: string,
+  entryDateStr: string,
+  avgCycleLength = 28
+): string {
+  if (!lastCycleStartDateStr || !entryDateStr) return entryDateStr;
+
+  try {
+    const start = new Date(lastCycleStartDateStr);
+    const target = new Date(entryDateStr);
+    const diffTime = target.getTime() - start.getTime();
+    const daysPassed = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (daysPassed <= (avgCycleLength || 28)) {
+      return lastCycleStartDateStr;
+    }
+
+    // Step forward by avgCycleLength until the last cycle start on or before target
+    const cycleDuration = avgCycleLength || 28;
+    const cyclesCount = Math.floor(daysPassed / cycleDuration);
+    const estimatedStartDate = new Date(start);
+    estimatedStartDate.setDate(estimatedStartDate.getDate() + (cyclesCount * cycleDuration));
+
+    const y = estimatedStartDate.getFullYear();
+    const m = String(estimatedStartDate.getMonth() + 1).padStart(2, '0');
+    const d = String(estimatedStartDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  } catch {
+    return entryDateStr;
+  }
+}
+
+
 

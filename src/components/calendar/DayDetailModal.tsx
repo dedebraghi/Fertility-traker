@@ -29,7 +29,15 @@ interface DayDetailModalProps {
   dayData: CalendarDayData | null;
   bbtMethod?: BbtMethod;
   onClose: () => void;
-  onSaveEntry: (entryDate: string, data: Partial<DailyEntry>) => Promise<void>;
+  onSaveEntry: (
+    entryDate: string,
+    data: Partial<DailyEntry>,
+    options?: {
+      forceNewCycle?: boolean;
+      newCycleStartDate?: string;
+      isContinuationOfLongCycle?: boolean;
+    }
+  ) => Promise<void>;
 }
 
 export const DayDetailModal: React.FC<DayDetailModalProps> = ({
@@ -105,26 +113,34 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
         entry.notes)
   );
 
-  const handleSave = async () => {
+  const handleSave = async (options?: {
+    forceNewCycle?: boolean;
+    newCycleStartDate?: string;
+    isContinuationOfLongCycle?: boolean;
+  }) => {
     setSaving(true);
     setSavedSuccess(false);
     try {
-      await onSaveEntry(dayData.date, {
-        cycle_day: dayData.cycleDay || 1,
-        entry_date: dayData.date,
-        bbt,
-        bbt_time: bbtTime,
-        menstruation,
-        sensation,
-        mucus_qty_symbol: mucusQtySymbol,
-        mucus_qty: mucusQty,
-        mucus_char: mucusChar,
-        cervix_consistency: cervixConsistency,
-        cervix_opening: cervixOpening,
-        cervix_position: cervixPosition,
-        intercourse,
-        notes,
-      });
+      await onSaveEntry(
+        dayData.date,
+        {
+          cycle_day: dayData.cycleDay || 1,
+          entry_date: dayData.date,
+          bbt,
+          bbt_time: bbtTime,
+          menstruation,
+          sensation,
+          mucus_qty_symbol: mucusQtySymbol,
+          mucus_qty: mucusQty,
+          mucus_char: mucusChar,
+          cervix_consistency: cervixConsistency,
+          cervix_opening: cervixOpening,
+          cervix_position: cervixPosition,
+          intercourse,
+          notes,
+        },
+        options
+      );
 
       setSavedSuccess(true);
       setTimeout(() => {
@@ -160,7 +176,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
             <p className="text-xs text-stone-500 mt-0.5">
               {dayData.cycleDay
                 ? `Giorno ${dayData.cycleDay}${dayData.cycleNumber ? ` • Ciclo N° ${dayData.cycleNumber}` : ''}`
-                : 'Data fuori ciclo attivo'}
+                : 'Data libera da cicli precedenti'}
             </p>
           </div>
 
@@ -171,6 +187,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
 
         {/* Content Body */}
         <div className="p-5 overflow-y-auto space-y-4 flex-1">
