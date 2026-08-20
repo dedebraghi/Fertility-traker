@@ -396,7 +396,8 @@ export function calculateNextCycleNumberWithGap(
   avgCycleLength = 28
 ): number {
   if (!lastCycle) return 1;
-  if (!newStartDateStr || !lastCycle.start_date) return (lastCycle.cycle_number || 0) + 1;
+  const currentNum = lastCycle.cycle_number || 0;
+  if (!newStartDateStr || !lastCycle.start_date) return currentNum + 1;
 
   try {
     const start = new Date(lastCycle.start_date);
@@ -404,13 +405,12 @@ export function calculateNextCycleNumberWithGap(
     const diffTime = target.getTime() - start.getTime();
     const daysPassed = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-    if (daysPassed <= 0) return lastCycle.cycle_number;
-    if (daysPassed <= 45) return lastCycle.cycle_number + 1;
+    if (daysPassed <= 45) return currentNum + 1;
 
     const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / (avgCycleLength || 28)));
-    return lastCycle.cycle_number + estimatedCyclesPassed;
+    return currentNum + estimatedCyclesPassed;
   } catch {
-    return (lastCycle.cycle_number || 0) + 1;
+    return currentNum + 1;
   }
 }
 

@@ -378,14 +378,41 @@ export function useCycleData() {
       .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
     const prevCycle = sortedCycles.filter(c => new Date(c.start_date) < new Date(startDate)).pop() || activeCycle || null;
 
-    const nextNumber = options?.customCycleNumber || calculateNextCycleNumberWithGap(prevCycle, startDate);
+    // Check if a cycle with the exact same start_date already exists
+    const existingCycleSameStart = cycles.find(c => c.start_date === startDate);
+    if (existingCycleSameStart) {
+      await client
+        .from('cycles')
+        .update({ is_active: true })
+        .eq('id', existingCycleSameStart.id);
+
+      await client.from('daily_entries').upsert({
+        cycle_id: existingCycleSameStart.id,
+        user_id: user.id,
+        cycle_day: 1,
+        entry_date: startDate,
+        menstruation: options?.initialMenstruation || 'Flusso',
+      }, { onConflict: 'cycle_id,cycle_day' });
+
+      await fetchCycles();
+      setActiveCycleId(existingCycleSameStart.id);
+      return existingCycleSameStart;
+    }
+
+    // Ensure cycle number is unique for this year
+    const existingNumbersForYear = new Set(cycles.filter(c => c.year === calculatedYear).map(c => c.cycle_number));
+    let safeNextNumber = Number(nextNumber);
+    while (existingNumbersForYear.has(safeNextNumber)) {
+      safeNextNumber++;
+    }
+
     const bbtMethod = options?.customBbtMethod || activeCycle?.bbt_method || 'Vaginale';
     const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
 
     const payload = {
       user_id: user.id,
       name,
-      cycle_number: Number(nextNumber),
+      cycle_number: safeNextNumber,
       year: calculatedYear,
       month_str: calculatedMonthStr,
       start_date: startDate,
@@ -407,13 +434,13 @@ export function useCycleData() {
 
     if (newCycle) {
       // Day 1 entry with initial menstruation
-      await client.from('daily_entries').insert({
+      await client.from('daily_entries').upsert({
         cycle_id: newCycle.id,
         user_id: user.id,
         cycle_day: 1,
         entry_date: newCycle.start_date,
         menstruation: options?.initialMenstruation || 'Flusso',
-      });
+      }, { onConflict: 'cycle_id,cycle_day' });
 
       await fetchCycles();
       setActiveCycleId(newCycle.id);
