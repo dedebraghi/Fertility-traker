@@ -4,14 +4,16 @@ import { evaluateSymptothermalStatus, computeDataFingerprint } from '../utils/sy
 const SETTINGS_KEY = 'fertility_tracker_gemini_settings';
 const ANALYSIS_CACHE_PREFIX = 'fertility_ai_analysis_';
 
+export const DEFAULT_GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+
 export const AVAILABLE_MODELS = [
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Consigliato, Veloce & Gratuito)' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Stabile & Leggero)' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Ragionamento Approfondito)' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Predefinito, Ultima Generazione)' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Veloce & Affidabile)' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Fallback Leggero)' },
 ];
 
-export const DEFAULT_MODEL = 'gemini-2.0-flash';
-export const FALLBACK_MODEL = 'gemini-1.5-flash';
+export const DEFAULT_MODEL = 'gemini-3.6-flash';
+export const FALLBACK_MODEL = 'gemini-2.5-flash';
 
 export function getGeminiSettings(): GeminiSettings {
   try {
@@ -19,7 +21,7 @@ export function getGeminiSettings(): GeminiSettings {
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
-        apiKey: parsed.apiKey || '',
+        apiKey: parsed.apiKey || DEFAULT_GEMINI_API_KEY,
         selectedModel: parsed.selectedModel || DEFAULT_MODEL,
         includeNotes: parsed.includeNotes ?? true,
       };
@@ -28,7 +30,7 @@ export function getGeminiSettings(): GeminiSettings {
     console.error('Error reading Gemini settings', e);
   }
   return {
-    apiKey: '',
+    apiKey: DEFAULT_GEMINI_API_KEY,
     selectedModel: DEFAULT_MODEL,
     includeNotes: true,
   };
