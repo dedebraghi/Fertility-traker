@@ -15,6 +15,8 @@ export function useCycleData() {
   const [allEntriesByDate, setAllEntriesByDate] = useState<Record<string, DailyEntry>>({});
   const [allEntriesList, setAllEntriesList] = useState<DailyEntry[]>([]);
 
+  const activeCycle = cycles.find(c => c.id === activeCycleId) || null;
+
   // 1. Fetch Cycles
   const fetchCycles = useCallback(async () => {
     if (!user) {
