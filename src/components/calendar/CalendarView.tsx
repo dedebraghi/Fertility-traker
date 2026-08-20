@@ -39,10 +39,10 @@ const MONTH_NAMES = [
 ];
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
-  cycles = [],
+  cycles,
   activeCycle,
-  allEntriesByDate = {},
-  allEntriesList = [],
+  allEntriesByDate,
+  allEntriesList,
   onSaveEntryForDate,
 }) => {
   const today = new Date();

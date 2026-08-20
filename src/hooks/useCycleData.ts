@@ -259,20 +259,16 @@ export function useCycleData() {
         initialMenstruation: entryData.menstruation || undefined,
       });
     } else {
-      // When NO new menstruation is entered, place the data directly into the estimated cycle
+      // Use estimated cycle placement for non-menstruation entries
       const est = getEstimatedCycleForDate(entryDate, sortedCycles, 28);
 
       if (est.isExistingCycle && est.existingCycleId) {
         targetCycle = sortedCycles.find(c => c.id === est.existingCycleId) || null;
       } else {
-        const existingCycleByDate = sortedCycles.find(c => c.start_date === est.startDate);
-        if (existingCycleByDate) {
-          targetCycle = existingCycleByDate;
-        } else {
-          // Create the estimated cycle container
-          targetCycle = await transitionToNewCycle(est.startDate, {
-            customCycleNumber: est.cycleNumber,
-          });
+        // Check if a cycle with estimated start already exists
+        const existingByDate = sortedCycles.find(c => c.start_date === est.startDate);
+        if (existingByDate) {
+          targetCycle = existingByDate;
         }
       }
 
