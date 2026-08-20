@@ -1,5 +1,6 @@
 import { Cycle, DailyEntry, GeminiSettings, AiAnalysisReport, SymptothermalEvaluation } from '../types';
 import { evaluateSymptothermalStatus, computeDataFingerprint } from '../utils/symptothermal';
+import { getSupabaseClient } from './supabase';
 
 const SETTINGS_KEY = 'fertility_tracker_gemini_settings';
 const ANALYSIS_CACHE_PREFIX = 'fertility_ai_analysis_';
@@ -243,32 +244,40 @@ function buildMultiCyclePrompt(cycles: Cycle[], includeNotes: boolean): string {
   sortedCycles.forEach((c) => {
     const entries = c.daily_entries || {};
     const evalRes = evaluateSymptothermalStatus(entries);
-    const dayCount = Object.keys(entries).length;
+    const dayNumbers = Object.keys(entries).map(Number).sort((a, b) => a - b);
+    const dayCount = dayNumbers.length;
+
+    const bbtValues = dayNumbers
+      .map((d) => entries[d]?.bbt)
+      .filter((v): v is number => typeof v === 'number' && !isNaN(v));
+    const minBbt = bbtValues.length > 0 ? Math.min(...bbtValues).toFixed(2) : null;
+    const maxBbt = bbtValues.length > 0 ? Math.max(...bbtValues).toFixed(2) : null;
 
     summaryData += `\n### Ciclo N. ${c.cycle_number} (${c.name || 'Senza nome'} - Inizio: ${c.start_date || 'N/D'}):\n`;
     summaryData += `- Giorni totali registrati: ${dayCount}\n`;
-    summaryData += `- Ovulazione confermata: ${evalRes.hasOvulationDetected ? 'Sì' : 'Non confermata'}\n`;
-    summaryData += `- Coverline: ${evalRes.coverline ? evalRes.coverline.toFixed(2) + ' °C' : 'N/D'}\n`;
-    summaryData += `- Giorno Picco Muco: ${evalRes.mucusPeakDay ? 'Giorno ' + evalRes.mucusPeakDay : 'N/D'}\n`;
-    summaryData += `- Durata Fase Follicolare: ${evalRes.follicularPhaseLength ? evalRes.follicularPhaseLength + ' gg' : 'N/D'}\n`;
-    summaryData += `- Durata Fase Luteale: ${evalRes.lutealPhaseLength ? evalRes.lutealPhaseLength + ' gg' : 'N/D'}\n`;
+    summaryData += `- Rilevazioni temperatura basale (BBT): ${bbtValues.length} giorni registrati ${minBbt && maxBbt ? `(range: ${minBbt}°C - ${maxBbt}°C)` : ''}\n`;
+    summaryData += `- Ovulazione confermata (Regola 3 su 6): ${evalRes.hasOvulationDetected ? 'Sì, rilevata' : 'Non rilevata o dati insufficienti'}\n`;
+    summaryData += `- Coverline (linea di base): ${evalRes.coverline ? evalRes.coverline.toFixed(2) + ' °C' : 'N/D'}\n`;
+    summaryData += `- Giorno Picco Muco Cervicale: ${evalRes.mucusPeakDay ? 'Giorno ' + evalRes.mucusPeakDay : 'Non identificato'}\n`;
+    summaryData += `- Durata stimata Fase Follicolare: ${evalRes.follicularPhaseLength ? evalRes.follicularPhaseLength + ' giorni' : 'N/D'}\n`;
+    summaryData += `- Durata stimata Fase Luteale: ${evalRes.lutealPhaseLength ? evalRes.lutealPhaseLength + ' giorni' : 'N/D'}\n`;
 
     if (includeNotes && evalRes.notesSummary && evalRes.notesSummary.length > 0) {
-      summaryData += `- Note di rilievo: ${evalRes.notesSummary.slice(0, 3).join('; ')}\n`;
+      summaryData += `- Note di rilievo / fattori di disturbo: ${evalRes.notesSummary.slice(0, 5).join('; ')}\n`;
     }
   });
 
   return `Sei una consulente esperta e divulgatrice del Metodo Sintotermico CAMEN / Roetzer.
 Il tuo compito è redigere un Report Storico Comparativo Pluri-Ciclo basato sui dati dei seguenti ${sortedCycles.length} cicli.
 
-Dati storici dei cicli:
+Dati storici dettagliati dei cicli:
 ${summaryData}
 
-Redigi un report divulgativo ed empatico strutturato nelle seguenti sezioni:
-1. 📊 **Panoramica & Trend di Regolarità**: Analizza la variabilità della durata dei cicli e del giorno di ovulazione.
-2. 🌡️ **Stabilità della Curva Termica & Fase Luteale**: Commenta la stabilità della temperatura post-ovulatoria e la durata della fase luteale nei vari cicli (indice di benessere ormonale).
+Redigi un report divulgativo, accurato ed empatico strutturato nelle seguenti sezioni:
+1. 📊 **Panoramica & Trend di Regolarità**: Analizza la variabilità della durata dei cicli e la frequenza delle osservazioni.
+2. 🌡️ **Stabilità della Curva Termica & Fase Luteale**: Commenta le temperature registrate, la stabilità post-ovulatoria e la durata della fase luteale (indice di benessere ormonale e progesterone).
 3. 💧 **Pattern del Muco Cervicale**: Osservazioni sulla chiarezza e riconoscibilità del muco nel tempo.
-4. 💡 **Consigli Pratici di Compilazione**: Suggerimenti per affinare la precisione delle osservazioni.
+4. 💡 **Consigli Pratici di Compilazione**: Suggerimenti per affinare la precisione delle osservazioni (es. continuità delle misurazioni, termometro).
 5. 📋 **Sintesi per il Colloquio CAMEN/Ginecologico**: Spunti di discussione utili per il prossimo controllo.
 
 Includi sempre il disclaimer finale che il report è a scopo divulgativo ed educativo.`;
@@ -289,9 +298,34 @@ export async function generateSingleCycleAnalysis(
     throw new Error('Chiave API Google Gemini non configurata. Inseriscila nelle Impostazioni o nella schermata di Analisi.');
   }
 
-  const evalResult = evaluateSymptothermalStatus(entries);
-  const fingerprint = computeDataFingerprint(entries);
-  const prompt = buildSingleCyclePrompt(cycle, entries, evalResult, settings.includeNotes);
+  let activeEntries = { ...entries };
+  if (Object.keys(activeEntries).length === 0) {
+    const client = getSupabaseClient();
+    if (client && cycle.id) {
+      try {
+        const { data: dbEntries } = await client
+          .from('daily_entries')
+          .select('*')
+          .eq('cycle_id', cycle.id)
+          .order('cycle_day', { ascending: true });
+
+        if (dbEntries && dbEntries.length > 0) {
+          dbEntries.forEach((entry: DailyEntry) => {
+            activeEntries[entry.cycle_day] = {
+              ...entry,
+              bbt: entry.bbt !== null ? Number(entry.bbt) : null,
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('Could not fetch daily entries for single cycle', e);
+      }
+    }
+  }
+
+  const evalResult = evaluateSymptothermalStatus(activeEntries);
+  const fingerprint = computeDataFingerprint(activeEntries);
+  const prompt = buildSingleCyclePrompt(cycle, activeEntries, evalResult, settings.includeNotes);
 
   const { text, modelUsed } = await callGeminiApi(apiKey, settings.selectedModel, prompt);
 
@@ -336,10 +370,49 @@ export async function generateMultiCycleAnalysis(
     throw new Error('Nessun ciclo disponibile per l\'analisi storica.');
   }
 
-  const prompt = buildMultiCyclePrompt(cycles, settings.includeNotes);
+  // Populate daily_entries for all cycles by querying Supabase
+  let populatedCycles: Cycle[] = cycles.map((c) => ({
+    ...c,
+    daily_entries: { ...(c.daily_entries || {}) },
+  }));
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const cycleIds = cycles.map((c) => c.id);
+      const { data: allEntries, error } = await client
+        .from('daily_entries')
+        .select('*')
+        .in('cycle_id', cycleIds)
+        .order('cycle_day', { ascending: true });
+
+      if (!error && allEntries && allEntries.length > 0) {
+        const entriesByCycle: Record<string, Record<number, DailyEntry>> = {};
+        allEntries.forEach((entry: DailyEntry) => {
+          if (!entry.cycle_id) return;
+          if (!entriesByCycle[entry.cycle_id]) {
+            entriesByCycle[entry.cycle_id] = {};
+          }
+          entriesByCycle[entry.cycle_id][entry.cycle_day] = {
+            ...entry,
+            bbt: entry.bbt !== null ? Number(entry.bbt) : null,
+          };
+        });
+
+        populatedCycles = cycles.map((c) => ({
+          ...c,
+          daily_entries: entriesByCycle[c.id] || c.daily_entries || {},
+        }));
+      }
+    } catch (e) {
+      console.warn('Could not fetch daily entries from Supabase', e);
+    }
+  }
+
+  const prompt = buildMultiCyclePrompt(populatedCycles, settings.includeNotes);
   const { text, modelUsed } = await callGeminiApi(apiKey, settings.selectedModel, prompt);
 
-  const activeCycle = cycles.find((c) => c.is_active) || cycles[0];
+  const activeCycle = populatedCycles.find((c) => c.is_active) || populatedCycles[0];
   const evalResult = evaluateSymptothermalStatus(activeCycle.daily_entries || {});
 
   const report: AiAnalysisReport = {
