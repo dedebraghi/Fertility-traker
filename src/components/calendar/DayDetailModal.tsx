@@ -465,6 +465,8 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
                 </button>
               </div>
             </div>
+          )}
+
           {/* Menstruation Flow / Spotting Choice Modal */}
           {showMenstChoiceModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-fade-in">
