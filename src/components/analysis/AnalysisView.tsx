@@ -300,7 +300,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           <button
             type="button"
             onClick={handleGenerateAnalysis}
-            disabled={loading || !hasApiKey}
+            disabled={loading}
             className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold whitespace-nowrap transition-all shadow-sm disabled:opacity-50"
           >
             Aggiorna Report
@@ -313,7 +313,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled={loading || !hasApiKey}
+            disabled={loading}
             onClick={handleGenerateAnalysis}
             className="px-4 py-2.5 rounded-2xl bg-nature-700 hover:bg-nature-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
           >
@@ -438,16 +438,15 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               Premi il pulsante <strong>"Genera Analisi con Gemini"</strong> per ottenere una disamina pedagogica e completa dei tuoi dati fisiologici, curva termica, muco e cervice.
             </p>
           </div>
-          {hasApiKey && (
-            <button
-              type="button"
-              onClick={handleGenerateAnalysis}
-              className="px-6 py-2.5 rounded-2xl bg-nature-700 hover:bg-nature-800 text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>Avvia Analisi Gratuita</span>
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={handleGenerateAnalysis}
+            className="px-6 py-2.5 rounded-2xl bg-nature-700 hover:bg-nature-800 text-white text-xs font-bold transition-all shadow-sm inline-flex items-center gap-2 disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>{loading ? 'Elaborazione in corso...' : 'Avvia Analisi Gratuita'}</span>
+          </button>
         </div>
       )}
 
