@@ -1,5 +1,5 @@
 import { Cycle, DailyEntry, CalendarDayData, CycleStatistics } from '../types';
-import { evaluateSymptothermalStatus, calculateDayFromDate } from './symptothermal';
+import { evaluateSymptothermalStatus, calculateDayFromDate, getEstimatedCycleForDate } from './symptothermal';
 
 /**
  * Format a Date object to YYYY-MM-DD string
@@ -254,33 +254,18 @@ export function buildMonthCalendar(
     // Find if there is an existing daily entry for this date
     const entry = entriesByDate[dateIso];
 
-    // Find cycle info for this date if it falls within a cycle
+    // Find cycle info for this date if it falls within a cycle or estimated cycle
     let cycleId: string | undefined = entry?.cycle_id;
     let cycleNumber: number | undefined;
     let cycleDay: number | undefined = entry?.cycle_day;
 
-    if (!cycleId && sortedCycles.length > 0) {
-      // Find the most recent cycle started on or before this date
-      const currentDateObj = new Date(dateIso);
-      let candidateCycle: Cycle | null = null;
+    const isEntryStaleDay = cycleDay !== undefined && cycleDay > 50;
 
-      for (let cIdx = sortedCycles.length - 1; cIdx >= 0; cIdx--) {
-        const c = sortedCycles[cIdx];
-        if (new Date(c.start_date) <= currentDateObj) {
-          candidateCycle = c;
-          break;
-        }
-      }
-
-      if (candidateCycle) {
-        const dayCalc = calculateDayFromDate(candidateCycle.start_date, dateIso);
-        // Only assign if within reasonable length (e.g. up to 50 days) and not a huge gap
-        if (dayCalc !== null && dayCalc >= 1 && dayCalc <= 50) {
-          cycleId = candidateCycle.id;
-          cycleNumber = candidateCycle.cycle_number;
-          cycleDay = dayCalc;
-        }
-      }
+    if ((!cycleId || isEntryStaleDay) && sortedCycles.length > 0) {
+      const est = getEstimatedCycleForDate(dateIso, sortedCycles, stats?.averageCycleLength || 28);
+      cycleId = est.existingCycleId || cycleId;
+      cycleNumber = est.cycleNumber;
+      cycleDay = est.cycleDay;
     } else if (cycleId) {
       const parentCycle = cycles.find((c) => c.id === cycleId);
       if (parentCycle) {

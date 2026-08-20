@@ -167,13 +167,15 @@ export function useCycleData() {
   ) => {
     if (!user) throw new Error('Utente non autenticato');
 
-    // If options indicate starting a new cycle or custom date
-    if (options?.forceNewCycle || options?.newCycleStartDate) {
-      const entryDate = entry.entry_date || options.newCycleStartDate || (activeCycle ? calculateDateForDay(activeCycle.start_date, entry.cycle_day) : new Date().toISOString().split('T')[0]);
+    const calculatedDay = activeCycle ? calculateDayFromDate(activeCycle.start_date, entry.entry_date || new Date().toISOString().split('T')[0]) : null;
+    const isCycleStale = Boolean(calculatedDay !== null && (calculatedDay > 50 || calculatedDay < 1));
+
+    // If activeCycle is stale or options indicate custom cycle creation, route through saveEntryForDate
+    if (isCycleStale || options?.forceNewCycle || options?.newCycleStartDate || !activeCycle) {
+      const entryDate = entry.entry_date || (activeCycle ? calculateDateForDay(activeCycle.start_date, entry.cycle_day) : new Date().toISOString().split('T')[0]);
       return saveEntryForDate(entryDate!, entry, options);
     }
 
-    if (!activeCycle) throw new Error('Nessun ciclo attivo');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
@@ -269,6 +271,11 @@ export function useCycleData() {
         const existingByDate = sortedCycles.find(c => c.start_date === est.startDate);
         if (existingByDate) {
           targetCycle = existingByDate;
+        } else {
+          // Auto-create estimated cycle container
+          targetCycle = await transitionToNewCycle(est.startDate, {
+            customCycleNumber: est.cycleNumber,
+          });
         }
       }
 
