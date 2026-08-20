@@ -113,11 +113,31 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
         entry.notes)
   );
 
-  const handleSave = async (options?: {
+  const handleSave = async (opts?: {
     forceNewCycle?: boolean;
     newCycleStartDate?: string;
     isContinuationOfLongCycle?: boolean;
   }) => {
+    let options = opts;
+
+    // If user is adding a menstruation and it wasn't already recorded as menstruation
+    const isNewMenst = Boolean(
+      menstruation &&
+      ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation) &&
+      !entry?.menstruation
+    );
+
+    if (isNewMenst && !options) {
+      const confirmNewCycle = window.confirm(
+        `Hai registrato una mestruazione (${menstruation}) in data ${formatDateItalian(dayData.date)}.\n\nVuoi avviare un nuovo ciclo a partire da questa data?`
+      );
+      if (confirmNewCycle) {
+        options = { forceNewCycle: true };
+      } else {
+        options = { isContinuationOfLongCycle: true };
+      }
+    }
+
     setSaving(true);
     setSavedSuccess(false);
     try {

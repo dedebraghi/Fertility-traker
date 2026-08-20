@@ -10,6 +10,7 @@ import {
   isFirstDayOfPeriod,
   calculateNextCycleNumberWithGap,
   estimateCycleStartDateForLateEntry,
+  getEstimatedCycleForDate,
 } from '../utils/symptothermal';
 
 export function useCycleData() {
@@ -258,12 +259,20 @@ export function useCycleData() {
         initialMenstruation: entryData.menstruation || undefined,
       });
     } else {
-      // Find the most recent cycle started on or before this date
-      for (let i = sortedCycles.length - 1; i >= 0; i--) {
-        const c = sortedCycles[i];
-        if (new Date(c.start_date) <= targetDateObj) {
-          targetCycle = c;
-          break;
+      // When NO new menstruation is entered, place the data directly into the estimated cycle
+      const est = getEstimatedCycleForDate(entryDate, sortedCycles, 28);
+
+      if (est.isExistingCycle && est.existingCycleId) {
+        targetCycle = sortedCycles.find(c => c.id === est.existingCycleId) || null;
+      } else {
+        const existingCycleByDate = sortedCycles.find(c => c.start_date === est.startDate);
+        if (existingCycleByDate) {
+          targetCycle = existingCycleByDate;
+        } else {
+          // Create the estimated cycle container
+          targetCycle = await transitionToNewCycle(est.startDate, {
+            customCycleNumber: est.cycleNumber,
+          });
         }
       }
 
@@ -271,7 +280,7 @@ export function useCycleData() {
         targetCycle = activeCycle || sortedCycles[0] || null;
       }
 
-      // If no cycle exists, start first cycle
+      // If no cycle exists at all, start first cycle
       if (!targetCycle) {
         targetCycle = await startFirstCycle(entryDate, {
           bbtMethod: 'Vaginale',

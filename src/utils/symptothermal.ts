@@ -444,5 +444,88 @@ export function estimateCycleStartDateForLateEntry(
   }
 }
 
+/**
+ * Calculates the estimated cycle metadata (cycleNumber, startDate, cycleDay)
+ * for any given date based on cycle history and average length.
+ */
+export function getEstimatedCycleForDate(
+  dateStr: string,
+  cycles: { cycle_number: number; start_date: string; id?: string; is_active?: boolean }[],
+  avgCycleLength = 28
+): {
+  cycleNumber: number;
+  startDate: string;
+  cycleDay: number;
+  isExistingCycle: boolean;
+  existingCycleId?: string;
+} {
+  if (!dateStr) {
+    return { cycleNumber: 1, startDate: dateStr, cycleDay: 1, isExistingCycle: false };
+  }
+
+  const validCycles = [...cycles]
+    .filter((c) => Boolean(c.start_date))
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+  if (validCycles.length === 0) {
+    return { cycleNumber: 1, startDate: dateStr, cycleDay: 1, isExistingCycle: false };
+  }
+
+  const targetDateObj = new Date(dateStr);
+  let latestCycle: typeof validCycles[0] | null = null;
+
+  for (let i = validCycles.length - 1; i >= 0; i--) {
+    if (new Date(validCycles[i].start_date) <= targetDateObj) {
+      latestCycle = validCycles[i];
+      break;
+    }
+  }
+
+  if (!latestCycle) {
+    return {
+      cycleNumber: 1,
+      startDate: validCycles[0].start_date,
+      cycleDay: 1,
+      isExistingCycle: false,
+    };
+  }
+
+  const diffDays = calculateDayFromDate(latestCycle.start_date, dateStr) || 1;
+  const cycleLen = avgCycleLength || 28;
+
+  // If within the same cycle period (up to cycleLen)
+  if (diffDays <= cycleLen) {
+    return {
+      cycleNumber: latestCycle.cycle_number,
+      startDate: latestCycle.start_date,
+      cycleDay: diffDays,
+      isExistingCycle: true,
+      existingCycleId: latestCycle.id,
+    };
+  }
+
+  // If beyond cycleLen, calculate intermediate estimated cycles
+  const cyclesPassed = Math.floor((diffDays - 1) / cycleLen);
+  const estimatedCycleNumber = latestCycle.cycle_number + cyclesPassed;
+  
+  // Calculate start date of this estimated cycle
+  const [y, m, d] = latestCycle.start_date.split('-').map(Number);
+  const estStartDate = new Date(y, m - 1, d);
+  estStartDate.setDate(estStartDate.getDate() + (cyclesPassed * cycleLen));
+  const estY = estStartDate.getFullYear();
+  const estM = String(estStartDate.getMonth() + 1).padStart(2, '0');
+  const estD = String(estStartDate.getDate()).padStart(2, '0');
+  const estimatedStartDateStr = `${estY}-${estM}-${estD}`;
+
+  const estimatedCycleDay = calculateDayFromDate(estimatedStartDateStr, dateStr) || 1;
+
+  return {
+    cycleNumber: estimatedCycleNumber,
+    startDate: estimatedStartDateStr,
+    cycleDay: estimatedCycleDay,
+    isExistingCycle: false,
+  };
+}
+
 
 
