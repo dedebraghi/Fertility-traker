@@ -113,11 +113,25 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
         entry.notes)
   );
 
+  const [showMenstChoiceModal, setShowMenstChoiceModal] = useState<boolean>(false);
+
   const handleSave = async (options?: {
     forceNewCycle?: boolean;
     newCycleStartDate?: string;
     isContinuationOfLongCycle?: boolean;
   }) => {
+    // If recording a new menstruation and not already decided
+    const isNewBleeding = Boolean(
+      menstruation &&
+      ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation) &&
+      !entry?.menstruation
+    );
+
+    if (isNewBleeding && !options) {
+      setShowMenstChoiceModal(true);
+      return;
+    }
+
     setSaving(true);
     setSavedSuccess(false);
     try {
@@ -143,6 +157,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
       );
 
       setSavedSuccess(true);
+      setShowMenstChoiceModal(false);
       setTimeout(() => {
         setSavedSuccess(false);
         setIsEditing(false);
@@ -448,6 +463,86 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
                     'Salva Modifiche'
                   )}
                 </button>
+              </div>
+            </div>
+          {/* Menstruation Flow / Spotting Choice Modal */}
+          {showMenstChoiceModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-nature-100 animate-slide-up">
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
+                  <Droplet className="w-6 h-6" />
+                </div>
+
+                <h3 className="text-lg font-bold text-stone-900 text-center mb-2">
+                  Registrazione Sanguinamento
+                </h3>
+                
+                <p className="text-xs text-stone-600 text-center mb-5 leading-relaxed">
+                  Hai registrato una mestruazione (<strong>{menstruation}</strong>) in data{' '}
+                  <strong>{formatDateItalian(dayData.date)}</strong>.<br />
+                  Come desideri registrarla?
+                </p>
+
+                <div className="space-y-3">
+                  {/* Option 1: Start New Cycle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSave({
+                        forceNewCycle: true,
+                        newCycleStartDate: dayData.date,
+                      });
+                    }}
+                    disabled={saving}
+                    className="w-full text-left p-4 rounded-2xl border-2 border-rose-500 bg-rose-50/60 hover:bg-rose-100 transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-950">
+                        Inizia Nuovo Ciclo (Giorno 1)
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-800">
+                        Consigliato per vero mestruo
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-600 mt-1 leading-snug">
+                      Fa partire il nuovo ciclo con inizio il <strong>{formatDateItalian(dayData.date)}</strong> come <strong>Giorno 1</strong> e chiude il ciclo precedente.
+                    </p>
+                  </button>
+
+                  {/* Option 2: Keep in current cycle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSave({
+                        isContinuationOfLongCycle: true,
+                      });
+                    }}
+                    disabled={saving}
+                    className="w-full text-left p-4 rounded-2xl border border-stone-200 bg-stone-50 hover:bg-stone-100 transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-stone-800">
+                        Registra nel Ciclo Attuale
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-200 text-stone-700">
+                        Spotting / Perdita
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                      Mantiene il ciclo in corso e registra la perdita a <strong>Giorno {dayData.cycleDay || 1}</strong> senza aprire un nuovo ciclo.
+                    </p>
+                  </button>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-stone-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowMenstChoiceModal(false)}
+                    className="w-full py-2 text-center text-xs font-semibold text-stone-400 hover:text-stone-700 transition-colors"
+                  >
+                    Annulla
+                  </button>
+                </div>
               </div>
             </div>
           )}

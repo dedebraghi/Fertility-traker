@@ -189,14 +189,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
     setMenstruation(newMenst);
 
     if (newMenst && ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(newMenst)) {
-      if (isCycleStale) {
-        setTransitionDate(todayISO);
-        setTransitionCycleNumber(estimatedNextCycleNumber);
-        setTransitionMenstruation(newMenst);
-        setShowTransitionModal(true);
-      } else if (activeCycle && selectedDay > 5) {
-        const targetDate = calculateDateForDay(activeCycle.start_date, selectedDay) || todayISO;
-        const nextNum = calculateNextCycleNumberWithGap(activeCycle, targetDate);
+      const targetDate = isCycleStale ? todayISO : (calculateDateForDay(activeCycle?.start_date || todayISO, selectedDay) || todayISO);
+      const nextNum = isCycleStale ? estimatedNextCycleNumber : (activeCycle ? calculateNextCycleNumberWithGap(activeCycle, targetDate) : 1);
+
+      if (selectedDay > 1 || isCycleStale) {
         setTransitionDate(targetDate);
         setTransitionCycleNumber(nextNum);
         setTransitionMenstruation(newMenst);
