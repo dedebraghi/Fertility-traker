@@ -50,6 +50,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [showMenstChoiceModal, setShowMenstChoiceModal] = useState<boolean>(false);
 
   // Form State
   const [bbt, setBbt] = useState<number | null>(null);
@@ -112,8 +113,6 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
         entry.intercourse ||
         entry.notes)
   );
-
-  const [showMenstChoiceModal, setShowMenstChoiceModal] = useState<boolean>(false);
 
   const handleSave = async (options?: {
     forceNewCycle?: boolean;
@@ -403,8 +402,7 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
             <div className="space-y-4">
               <TemperaturePicker
                 bbt={bbt}
-                bbtTime={bbtTime}
-                bbtMethod={bbtMethod}
+                time={bbtTime}
                 onChangeBbt={setBbt}
                 onChangeTime={setBbtTime}
               />
