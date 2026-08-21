@@ -32,6 +32,7 @@ const MainContent: React.FC = () => {
     updateCycle,
     deleteCycle,
     importLegacyCycle,
+    resetAllUserData,
   } = useCycleData();
 
   const { isIOS, isStandalone, triggerInstall } = usePWAInstall();
@@ -144,6 +145,7 @@ const MainContent: React.FC = () => {
         {activeTab === 'settings' && (
           <SettingsView
             onImportLegacy={importLegacyCycle}
+            onResetAllUserData={resetAllUserData}
             onOpenAuth={() => setIsAuthOpen(true)}
             onOpenInstall={() => setIsInstallModalOpen(true)}
             isStandalone={isStandalone}

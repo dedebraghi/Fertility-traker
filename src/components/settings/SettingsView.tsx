@@ -23,10 +23,13 @@ import {
   RefreshCw,
   AlertCircle,
   ExternalLink,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface SettingsViewProps {
   onImportLegacy: (data: LegacyCycleJSON) => Promise<void>;
+  onResetAllUserData?: () => Promise<void>;
   onOpenAuth: () => void;
   onOpenInstall: () => void;
   isStandalone?: boolean;
@@ -34,6 +37,7 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   onImportLegacy,
+  onResetAllUserData,
   onOpenAuth,
   onOpenInstall,
   isStandalone,
@@ -47,12 +51,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
   const [keyStatusMessage, setKeyStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Account Reset State
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [resetSuccess, setResetSuccess] = useState<boolean>(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
   useEffect(() => {
     const settings = getGeminiSettings();
     setGeminiKey(settings.apiKey);
     setSelectedModel(settings.selectedModel);
     setIncludeNotes(settings.includeNotes);
   }, []);
+
+  const handleResetAccount = async () => {
+    if (!onResetAllUserData) return;
+    const firstConfirm = window.confirm(
+      "⚠️ ATTENZIONE: Sei sicuro di voler eliminare TUTTI i dati registrati su questo account?\n\nVerranno cancellati definitivamente tutti i cicli, le temperature, i sintomi e le note dal database."
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      "Conferma finale: Vuoi davvero ripristinare l'account a vergine? Questa operazione è IRREVERSIBILE."
+    );
+    if (!secondConfirm) return;
+
+    setIsResetting(true);
+    setResetError(null);
+    setResetSuccess(false);
+
+    try {
+      await onResetAllUserData();
+      setResetSuccess(true);
+      setTimeout(() => {
+        setResetSuccess(false);
+      }, 6000);
+    } catch (err: any) {
+      console.error('Error resetting account:', err);
+      setResetError(err.message || 'Errore durante l\'eliminazione dei dati');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const handleSaveAndTestGemini = async () => {
     if (!geminiKey.trim()) {
@@ -291,7 +330,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 5. Legacy Data Importer (Only visible when user is logged in) */}
       {user && <LegacyDataImporter onImport={onImportLegacy} />}
 
-      {/* 5. Guida Sintotermica Rapida CAMEN */}
+      {/* 6. Danger Zone: Ripristino Account a Vergine (Only visible when user is logged in) */}
+      {user && onResetAllUserData && (
+        <div className="bg-rose-50/70 rounded-3xl p-5 sm:p-6 border border-rose-200/90 shadow-card space-y-4">
+          <div className="flex items-center gap-2.5 text-rose-800">
+            <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-rose-950 text-sm">Zona Pericolo: Ripristino Account</h3>
+              <p className="text-[11px] text-rose-700">Cancella tutti i dati salvati e ricomincia da zero</p>
+            </div>
+          </div>
+
+          <p className="text-xs text-rose-900 leading-relaxed bg-white/60 p-3.5 rounded-2xl border border-rose-100">
+            Questa operazione eliminerà permanentemente tutti i <strong>cicli mestruali</strong>, le <strong>misurazioni giornaliere (BBT, muco, cervice, rapporti)</strong> e le <strong>note</strong> associate a questo account su Supabase, riportando l'applicazione allo stato iniziale pulito (account vergine).
+          </p>
+
+          {resetError && (
+            <div className="p-3 rounded-xl bg-rose-200 text-rose-900 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{resetError}</span>
+            </div>
+          )}
+
+          {resetSuccess && (
+            <div className="p-3.5 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-fade-in">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              <span>Tutti i dati sono stati cancellati con successo. Il tuo account è ora pulito e vergine!</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleResetAccount}
+            disabled={isResetting}
+            className="w-full py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white font-bold text-xs shadow-soft transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isResetting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Cancellazione in corso...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                <span>Elimina Tutti i Dati & Ripristina Account a Vergine</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* 7. Guida Sintotermica Rapida CAMEN */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-nature-200/70 shadow-card space-y-3">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-xl bg-sage-100 text-sage-700">

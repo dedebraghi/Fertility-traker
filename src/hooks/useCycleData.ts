@@ -719,6 +719,36 @@ export function useCycleData() {
     }
   };
 
+  // Reset all user data (clean database for this account)
+  const resetAllUserData = async () => {
+    if (!user) throw new Error('Utente non autenticato');
+    const client = getSupabaseClient();
+    if (!client) throw new Error('Database Supabase non connesso');
+
+    // 1. Delete all daily entries for this user
+    const { error: delEntriesErr } = await client
+      .from('daily_entries')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (delEntriesErr) throw new Error(`Errore eliminazione misurazioni: ${delEntriesErr.message}`);
+
+    // 2. Delete all cycles for this user
+    const { error: delCyclesErr } = await client
+      .from('cycles')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (delCyclesErr) throw new Error(`Errore eliminazione cicli: ${delCyclesErr.message}`);
+
+    // 3. Reset local state
+    setCycles([]);
+    setActiveCycleId(null);
+    setDailyEntries({});
+    setAllEntriesByDate({});
+    setAllEntriesList([]);
+  };
+
   return {
     cycles,
     activeCycle,
@@ -739,5 +769,6 @@ export function useCycleData() {
     updateCycle,
     deleteCycle,
     importLegacyCycle,
+    resetAllUserData,
   };
 }
