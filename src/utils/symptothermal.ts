@@ -90,7 +90,7 @@ export const CERVIX_POSITION_LABELS: Record<string, { label: string; desc: strin
   A: { label: 'Alta (A)', desc: 'Profonda / difficile da raggiungere' },
 };
 
-import { DailyEntry, SymptothermalEvaluation } from '../types';
+import { DailyEntry, SymptothermalEvaluation, FullCycleItem, Cycle } from '../types';
 
 /**
  * Computes a simple hash / fingerprint of daily entries to detect when data has changed.
@@ -319,6 +319,16 @@ export function calculateShortestCycleFromHistory(cycles: { start_date: string; 
 }
 
 /**
+ * Checks if a menstruation value represents genuine menstrual flow (Flusso / Abbondante / M / M+)
+ * excluding Spotting and light bleeding.
+ */
+export function isMenstrualFlow(menstruation: DailyEntry['menstruation'] | string | null | undefined): boolean {
+  if (!menstruation) return false;
+  const val = String(menstruation).trim();
+  return ['Flusso', 'Abbondante', 'M', 'M+'].includes(val);
+}
+
+/**
  * Checks if there was a significant gap between the last cycle and a new cycle,
  * and calculates approximate months and estimated cycles.
  */
@@ -337,8 +347,9 @@ export function estimateInterruptedCycles(
     const diffTime = target.getTime() - start.getTime();
     const daysPassed = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
     const monthsPassed = Math.max(0, Math.round(daysPassed / 30.4));
-    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / avgCycleLength));
-    const isSignificantGap = daysPassed > 45; // More than 45 days is a gap
+    const cycleLen = avgCycleLength || 28;
+    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / cycleLen));
+    const isSignificantGap = daysPassed > (cycleLen + 6);
 
     return {
       daysPassed,
@@ -353,14 +364,14 @@ export function estimateInterruptedCycles(
 
 /**
  * Checks if a given date with menstruation is the FIRST day of the period flow
- * (i.e. not immediately preceded by menstruation on the previous day).
+ * (i.e. Flusso/Abbondante on entryDate, but NO Flusso/Abbondante on previous day).
  */
 export function isFirstDayOfPeriod(
   entryDateStr: string,
   menstruation: DailyEntry['menstruation'] | null | undefined,
   entriesByDate: Record<string, DailyEntry> = {}
 ): boolean {
-  if (!menstruation || !['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation)) {
+  if (!isMenstrualFlow(menstruation)) {
     return false;
   }
   if (!entryDateStr) return false;
@@ -376,12 +387,9 @@ export function isFirstDayOfPeriod(
     const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`;
 
     const prevEntry = (entriesByDate || {})[prevDateStr];
-    const prevHadMenstruation = Boolean(
-      prevEntry?.menstruation &&
-      ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(prevEntry.menstruation)
-    );
+    const prevHadFlow = Boolean(prevEntry && isMenstrualFlow(prevEntry.menstruation));
 
-    return !prevHadMenstruation;
+    return !prevHadFlow;
   } catch {
     return true;
   }
@@ -404,10 +412,11 @@ export function calculateNextCycleNumberWithGap(
     const target = new Date(newStartDateStr);
     const diffTime = target.getTime() - start.getTime();
     const daysPassed = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    const cycleLen = avgCycleLength || 28;
 
-    if (daysPassed <= 45) return currentNum + 1;
+    if (daysPassed <= (cycleLen + 5)) return currentNum + 1;
 
-    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / (avgCycleLength || 28)));
+    const estimatedCyclesPassed = Math.max(1, Math.round(daysPassed / cycleLen));
     return currentNum + estimatedCyclesPassed;
   } catch {
     return currentNum + 1;
@@ -532,6 +541,146 @@ export function getEstimatedCycleForDate(
   };
 }
 
+/**
+ * Generates the complete, ordered sequence of all cycles (real database cycles + estimated gap/active cycles)
+ * starting from the very first recorded cycle up to the current date.
+ */
+export function generateFullCycleSequence(
+  cycles: Cycle[],
+  allEntriesByDate: Record<string, DailyEntry> = {},
+  avgCycleLength = 28,
+  todayIso = new Date().toISOString().split('T')[0]
+): FullCycleItem[] {
+  const validCycles = (cycles || [])
+    .filter((c) => Boolean(c && c.start_date))
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
+  if (validCycles.length === 0) {
+    return [];
+  }
 
+  const cycleLen = Math.max(20, Math.min(45, avgCycleLength || 28));
+  const rawItems: {
+    id?: string;
+    startDate: string;
+    isEstimated: boolean;
+    isActive: boolean;
+    realCycle?: Cycle;
+  }[] = [];
 
+  for (let i = 0; i < validCycles.length; i++) {
+    const current = validCycles[i];
+    rawItems.push({
+      id: current.id,
+      startDate: current.start_date,
+      isEstimated: false,
+      isActive: Boolean(current.is_active),
+      realCycle: current,
+    });
+
+    if (i < validCycles.length - 1) {
+      const next = validCycles[i + 1];
+      const daysToNext = calculateDayFromDate(current.start_date, next.start_date);
+      if (daysToNext !== null && daysToNext > (cycleLen + 5)) {
+        let stepStart = calculateDateForDay(current.start_date, cycleLen + 1);
+        while (stepStart) {
+          const daysFromStepToNext = calculateDayFromDate(stepStart, next.start_date);
+          if (daysFromStepToNext === null || daysFromStepToNext <= (cycleLen * 0.7)) {
+            break;
+          }
+          rawItems.push({
+            startDate: stepStart,
+            isEstimated: true,
+            isActive: false,
+          });
+          stepStart = calculateDateForDay(stepStart, cycleLen + 1);
+        }
+      }
+    } else {
+      // Last real cycle: check if it has been surpassed by today
+      const daysSinceStart = calculateDayFromDate(current.start_date, todayIso);
+      if (daysSinceStart !== null && daysSinceStart > (cycleLen + 5)) {
+        let stepStart = calculateDateForDay(current.start_date, cycleLen + 1);
+        while (stepStart) {
+          const daysFromStepToToday = calculateDayFromDate(stepStart, todayIso);
+          if (daysFromStepToToday === null || daysFromStepToToday < 1) {
+            break;
+          }
+          const isTodayInside = daysFromStepToToday >= 1 && daysFromStepToToday <= cycleLen;
+          rawItems.push({
+            startDate: stepStart,
+            isEstimated: true,
+            isActive: isTodayInside,
+          });
+          if (isTodayInside) break;
+          stepStart = calculateDateForDay(stepStart, cycleLen + 1);
+        }
+      }
+    }
+  }
+
+  // Sort chronologically and assign final metadata
+  rawItems.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+  // Count entries by cycle / date range
+  const allEntriesList = Object.values(allEntriesByDate);
+
+  const fullSequence: FullCycleItem[] = rawItems.map((item, index) => {
+    const cycleNumber = index + 1;
+    const [y] = item.startDate.split('-').map(Number);
+    const year = !isNaN(y) ? y : new Date().getFullYear();
+    const monthStr = item.realCycle?.month_str || generateMonthStr(item.startDate);
+
+    // Calculate length to next cycle if available
+    let lengthDays: number | undefined = undefined;
+    let endDate: string | undefined = undefined;
+
+    if (index < rawItems.length - 1) {
+      const nextStart = rawItems[index + 1].startDate;
+      const daysBetween = calculateDayFromDate(item.startDate, nextStart);
+      if (daysBetween !== null) {
+        lengthDays = daysBetween - 1;
+        endDate = calculateDateForDay(item.startDate, lengthDays) || undefined;
+      }
+    } else {
+      const daysToToday = calculateDayFromDate(item.startDate, todayIso);
+      if (daysToToday !== null && daysToToday >= 1) {
+        lengthDays = daysToToday;
+      }
+    }
+
+    let entriesCount = 0;
+    if (item.realCycle?.id) {
+      entriesCount = allEntriesList.filter((e) => e.cycle_id === item.realCycle!.id).length;
+    } else {
+      const nextStart = index < rawItems.length - 1 ? rawItems[index + 1].startDate : null;
+      entriesCount = allEntriesList.filter((e) => {
+        if (!e.entry_date) return false;
+        if (e.entry_date < item.startDate) return false;
+        if (nextStart && e.entry_date >= nextStart) return false;
+        return true;
+      }).length;
+    }
+
+    return {
+      id: item.id,
+      cycle_number: cycleNumber,
+      year,
+      month_str: monthStr,
+      start_date: item.startDate,
+      end_date: endDate,
+      length_days: lengthDays,
+      bbt_method: item.realCycle?.bbt_method || 'Vaginale',
+      shortest_cycle: item.realCycle?.shortest_cycle ?? null,
+      teacher_code: item.realCycle?.teacher_code || '',
+      protocol_number: item.realCycle?.protocol_number || '',
+      sigla: item.realCycle?.sigla || '',
+      is_active: item.isActive,
+      is_estimated: item.isEstimated,
+      has_data: entriesCount > 0,
+      entries_count: entriesCount,
+    };
+  });
+
+  return fullSequence;
+}

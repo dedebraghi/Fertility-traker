@@ -53,6 +53,25 @@ export interface Cycle {
   daily_entries?: Record<number, DailyEntry>;
 }
 
+export interface FullCycleItem {
+  id?: string;
+  cycle_number: number;
+  year: number;
+  month_str: string;
+  start_date: string;
+  end_date?: string;
+  length_days?: number;
+  bbt_method?: BbtMethod;
+  shortest_cycle?: number | null;
+  teacher_code?: string;
+  protocol_number?: string;
+  sigla?: string;
+  is_active: boolean;
+  is_estimated: boolean;
+  has_data: boolean;
+  entries_count?: number;
+}
+
 export interface LegacyCycleJSON {
   name?: string;
   cycle_number?: number;

@@ -359,6 +359,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       <DayDetailModal
         isOpen={isDetailModalOpen}
         dayData={selectedDayData}
+        allEntriesByDate={allEntriesByDate}
         bbtMethod={activeCycle?.bbt_method || 'Vaginale'}
         onClose={() => {
           setIsDetailModalOpen(false);

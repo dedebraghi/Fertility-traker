@@ -1,5 +1,11 @@
 import { Cycle, DailyEntry, CalendarDayData, CycleStatistics } from '../types';
-import { evaluateSymptothermalStatus, calculateDayFromDate, getEstimatedCycleForDate } from './symptothermal';
+import {
+  evaluateSymptothermalStatus,
+  calculateDayFromDate,
+  calculateDateForDay,
+  generateFullCycleSequence,
+  isMenstrualFlow,
+} from './symptothermal';
 
 /**
  * Format a Date object to YYYY-MM-DD string
@@ -40,10 +46,10 @@ export function computeCycleStatistics(
     if (i < validCycles.length - 1) {
       const next = validCycles[i + 1];
       const days = calculateDayFromDate(curr.start_date, next.start_date);
-      if (days !== null && days >= 18 && days <= 65) {
+      if (days !== null && days >= 18 && days <= 55) {
         cycleLengths.push(days - 1);
       }
-    } else if (curr.shortest_cycle && curr.shortest_cycle >= 18 && curr.shortest_cycle <= 65) {
+    } else if (curr.shortest_cycle && curr.shortest_cycle >= 18 && curr.shortest_cycle <= 55) {
       cycleLengths.push(curr.shortest_cycle);
     }
   }
@@ -62,7 +68,7 @@ export function computeCycleStatistics(
     const entries = entriesByCycle[cycleId].sort((a, b) => a.cycle_day - b.cycle_day);
     let count = 0;
     for (const e of entries) {
-      if (e.cycle_day <= 10 && (e.menstruation === 'Flusso' || e.menstruation === 'Abbondante' || e.menstruation === 'M')) {
+      if (e.cycle_day <= 10 && isMenstrualFlow(e.menstruation)) {
         count++;
       }
     }
@@ -120,6 +126,7 @@ export interface PredictedDateMap {
 
 /**
  * Generates predictions for a range of dates [rangeStart, rangeEnd]
+ * starting exclusively from the first recorded checkpoint onward.
  */
 export function generatePredictions(
   rangeStartStr: string,
@@ -134,66 +141,89 @@ export function generatePredictions(
 
   if (validCycles.length === 0) return result;
 
+  const firstRecordedStart = validCycles[0].start_date;
   const cycleLen = stats.averageCycleLength || 28;
   const periodLen = stats.averagePeriodLength || 5;
   const lutealLen = stats.averageLutealPhase || 14;
 
   // Helper to mark a single predicted cycle given its start date
-  const markPredictedCycle = (cycleStart: string) => {
-    // 1. Period days
+  const markPredictedCycle = (cycleStart: string, nextCycleStart?: string) => {
+    if (cycleStart < firstRecordedStart) return;
+
+    // 1. Period days (only predicted if not past real flow)
     for (let p = 0; p < periodLen; p++) {
       const d = addDaysIso(cycleStart, p);
-      if (!result[d]) result[d] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
-      result[d].isPeriod = true;
-    }
-
-    // 2. Next cycle start & ovulation
-    const nextStart = addDaysIso(cycleStart, cycleLen);
-    const ovulationDate = addDaysIso(nextStart, -lutealLen);
-
-    if (!result[ovulationDate]) {
-      result[ovulationDate] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
-    }
-    result[ovulationDate].isOvulation = true;
-
-    // 3. Fertile window: 5 days before ovulation + ovulation + 1 day after
-    for (let f = -5; f <= 1; f++) {
-      const fertileDay = addDaysIso(ovulationDate, f);
-      if (!result[fertileDay]) {
-        result[fertileDay] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
+      if (d >= firstRecordedStart) {
+        if (!result[d]) result[d] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
+        result[d].isPeriod = true;
       }
-      result[fertileDay].isFertileWindow = true;
+    }
+
+    // 2. Ovulation calculation
+    const effectiveNextStart = nextCycleStart || addDaysIso(cycleStart, cycleLen);
+    const ovulationDate = addDaysIso(effectiveNextStart, -lutealLen);
+
+    if (ovulationDate >= firstRecordedStart) {
+      if (!result[ovulationDate]) {
+        result[ovulationDate] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
+      }
+      result[ovulationDate].isOvulation = true;
+
+      // 3. Fertile window: 5 days before ovulation + ovulation + 1 day after
+      for (let f = -5; f <= 1; f++) {
+        const fertileDay = addDaysIso(ovulationDate, f);
+        if (fertileDay >= firstRecordedStart) {
+          if (!result[fertileDay]) {
+            result[fertileDay] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
+          }
+          result[fertileDay].isFertileWindow = true;
+        }
+      }
     }
   };
 
-  // A. Interpolate missing gaps between known cycles
-  for (let i = 0; i < validCycles.length - 1; i++) {
-    const c1Start = validCycles[i].start_date;
-    const c2Start = validCycles[i + 1].start_date;
-    const daysBetween = calculateDayFromDate(c1Start, c2Start);
+  // A. Predictions for recorded cycles and gaps between them
+  for (let i = 0; i < validCycles.length; i++) {
+    const curr = validCycles[i];
+    const c1Start = curr.start_date;
 
-    // If gap > 42 days (more than ~1.5 standard cycles)
-    if (daysBetween !== null && daysBetween > 42) {
-      let currentEstimate = addDaysIso(c1Start, cycleLen);
-      while (new Date(currentEstimate).getTime() + (cycleLen * 0.7 * 86400000) < new Date(c2Start).getTime()) {
-        markPredictedCycle(currentEstimate);
-        currentEstimate = addDaysIso(currentEstimate, cycleLen);
+    if (i < validCycles.length - 1) {
+      const next = validCycles[i + 1];
+      const c2Start = next.start_date;
+      const daysBetween = calculateDayFromDate(c1Start, c2Start);
+
+      if (daysBetween !== null && daysBetween <= (cycleLen + 5)) {
+        // Normal cycle duration between checkpoints
+        markPredictedCycle(c1Start, c2Start);
+      } else {
+        // Gap > cycleLen: mark cycle 1 prediction based on cycleLen
+        markPredictedCycle(c1Start, addDaysIso(c1Start, cycleLen));
+
+        // Step through intermediate estimated cycles
+        let stepStart = addDaysIso(c1Start, cycleLen);
+        while (stepStart) {
+          const daysToNext = calculateDayFromDate(stepStart, c2Start);
+          if (daysToNext === null || daysToNext <= (cycleLen * 0.7)) break;
+          const nextEst = addDaysIso(stepStart, cycleLen);
+          markPredictedCycle(stepStart, nextEst < c2Start ? nextEst : c2Start);
+          stepStart = nextEst;
+        }
+      }
+    } else {
+      // Latest recorded cycle
+      markPredictedCycle(c1Start, addDaysIso(c1Start, cycleLen));
+
+      // Project future cycles from latest cycle up to rangeEndStr and 18 months ahead
+      let projectedStart = addDaysIso(c1Start, cycleLen);
+      const rangeEndDate = new Date(rangeEndStr);
+      const maxLimit = new Date();
+      maxLimit.setFullYear(maxLimit.getFullYear() + 2);
+
+      while (new Date(projectedStart) <= rangeEndDate && new Date(projectedStart) <= maxLimit) {
+        markPredictedCycle(projectedStart, addDaysIso(projectedStart, cycleLen));
+        projectedStart = addDaysIso(projectedStart, cycleLen);
       }
     }
-  }
-
-  // B. Project future cycles from the latest known cycle
-  const latestCycle = validCycles[validCycles.length - 1];
-  let projectedStart = addDaysIso(latestCycle.start_date, cycleLen);
-
-  const rangeEndDate = new Date(rangeEndStr);
-  // Project up to 18 months ahead
-  const maxProjectLimit = new Date();
-  maxProjectLimit.setFullYear(maxProjectLimit.getFullYear() + 2);
-
-  while (new Date(projectedStart) <= rangeEndDate && new Date(projectedStart) <= maxProjectLimit) {
-    markPredictedCycle(projectedStart);
-    projectedStart = addDaysIso(projectedStart, cycleLen);
   }
 
   return result;
@@ -211,19 +241,14 @@ export function buildMonthCalendar(
 ): { days: CalendarDayData[]; stats: CycleStatistics } {
   // First day of month
   const firstDay = new Date(year, month - 1, 1);
-  // Last day of month
   const lastDay = new Date(year, month, 0);
 
   // Month starts on day of week (0 = Sunday, 1 = Monday, ...)
-  // In Italy/Europe, week starts on Monday (1). Sunday becomes 7.
   let startDayOfWeek = firstDay.getDay();
   if (startDayOfWeek === 0) startDayOfWeek = 7; // Sunday is 7th day
 
-  // Preceding days from previous month
   const prevMonthDaysCount = startDayOfWeek - 1;
-
   const startDate = new Date(year, month - 1, 1 - prevMonthDaysCount);
-  // Total cells to display: usually 35 (5 rows) or 42 (6 rows)
   const totalDays = prevMonthDaysCount + lastDay.getDate() > 35 ? 42 : 35;
 
   const endDate = new Date(startDate);
@@ -231,15 +256,23 @@ export function buildMonthCalendar(
 
   const startIso = formatDateIso(startDate);
   const endIso = formatDateIso(endDate);
+  const todayIso = formatDateIso(new Date());
 
   const predictions = generatePredictions(startIso, endIso, cycles, stats);
 
-  const todayIso = formatDateIso(new Date());
+  // Generate full sequence of real + estimated cycles
+  const fullCycleSequence = generateFullCycleSequence(
+    cycles,
+    entriesByDate,
+    stats?.averageCycleLength || 28,
+    todayIso
+  );
 
-  // Map cycles by start_date to easily find which cycle a date belongs to
-  const sortedCycles = [...cycles]
+  const validCycles = [...cycles]
     .filter((c) => Boolean(c.start_date))
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+  const firstCheckpointDate = validCycles.length > 0 ? validCycles[0].start_date : null;
 
   const days: CalendarDayData[] = [];
 
@@ -254,27 +287,30 @@ export function buildMonthCalendar(
     // Find if there is an existing daily entry for this date
     const entry = entriesByDate[dateIso];
 
-    // Find cycle info for this date if it falls within a cycle or estimated cycle
     let cycleId: string | undefined = entry?.cycle_id;
     let cycleNumber: number | undefined;
     let cycleDay: number | undefined = entry?.cycle_day;
 
-    const isEntryStaleDay = cycleDay !== undefined && cycleDay > 50;
+    // Resolve cycle number and cycle day from fullCycleSequence if at or after first checkpoint
+    if (firstCheckpointDate && dateIso >= firstCheckpointDate && fullCycleSequence.length > 0) {
+      // Find matching cycle in sequence
+      let matchedCycle = fullCycleSequence[0];
+      for (let s = fullCycleSequence.length - 1; s >= 0; s--) {
+        if (fullCycleSequence[s].start_date <= dateIso) {
+          matchedCycle = fullCycleSequence[s];
+          break;
+        }
+      }
 
-    if ((!cycleId || isEntryStaleDay) && sortedCycles.length > 0) {
-      const est = getEstimatedCycleForDate(dateIso, sortedCycles, stats?.averageCycleLength || 28);
-      cycleId = est.existingCycleId || cycleId;
-      cycleNumber = est.cycleNumber;
-      cycleDay = est.cycleDay;
-    } else if (cycleId) {
-      const parentCycle = cycles.find((c) => c.id === cycleId);
-      if (parentCycle) {
-        cycleNumber = parentCycle.cycle_number;
+      if (matchedCycle) {
+        cycleNumber = matchedCycle.cycle_number;
+        cycleDay = (calculateDayFromDate(matchedCycle.start_date, dateIso) || 1);
+        cycleId = matchedCycle.id || cycleId;
       }
     }
 
     const prediction = predictions[dateIso];
-    const hasActualPeriod = entry?.menstruation && ['Flusso', 'Abbondante', 'M', 'm', 'Spotting'].includes(entry.menstruation);
+    const hasActualPeriod = Boolean(entry?.menstruation && isMenstrualFlow(entry.menstruation));
 
     days.push({
       date: dateIso,
@@ -285,9 +321,9 @@ export function buildMonthCalendar(
       cycleNumber,
       cycleDay,
       entry,
-      isPredictedPeriod: !hasActualPeriod && prediction?.isPeriod,
-      isPredictedOvulation: prediction?.isOvulation,
-      isPredictedFertileWindow: prediction?.isFertileWindow,
+      isPredictedPeriod: !hasActualPeriod && Boolean(prediction?.isPeriod),
+      isPredictedOvulation: Boolean(prediction?.isOvulation),
+      isPredictedFertileWindow: Boolean(prediction?.isFertileWindow),
       predictionConfidence: stats.completedCyclesCount >= 3 ? 'high' : stats.completedCyclesCount >= 1 ? 'medium' : 'low',
     });
   }

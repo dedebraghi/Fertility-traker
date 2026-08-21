@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Cycle, DailyEntry, LegacyCycleJSON, BbtMethod } from '../types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Cycle, DailyEntry, LegacyCycleJSON, BbtMethod, FullCycleItem } from '../types';
 import { getSupabaseClient } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -8,10 +8,11 @@ import {
   generateMonthStr,
   calculateShortestCycleFromHistory,
   isFirstDayOfPeriod,
+  isMenstrualFlow,
   calculateNextCycleNumberWithGap,
-  estimateCycleStartDateForLateEntry,
-  getEstimatedCycleForDate,
+  generateFullCycleSequence,
 } from '../utils/symptothermal';
+import { computeCycleStatistics } from '../utils/cyclePredictions';
 
 export function useCycleData() {
   const { user } = useAuth();
@@ -50,8 +51,7 @@ export function useCycleData() {
       const { data, error: fetchErr } = await client
         .from('cycles')
         .select('*')
-        .order('year', { ascending: false })
-        .order('cycle_number', { ascending: false });
+        .order('start_date', { ascending: false });
 
       if (fetchErr) throw fetchErr;
 
@@ -64,10 +64,9 @@ export function useCycleData() {
           .select('cycle_id, menstruation')
           .eq('user_id', user.id);
 
-        const validPeriodSymbols = ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'];
         const cycleIdsWithPeriod = new Set(
           (allEnts || [])
-            .filter(e => e.menstruation && validPeriodSymbols.includes(e.menstruation))
+            .filter(e => isMenstrualFlow(e.menstruation))
             .map(e => e.cycle_id)
         );
 
@@ -79,8 +78,7 @@ export function useCycleData() {
           const { data: cleanData } = await client
             .from('cycles')
             .select('*')
-            .order('year', { ascending: false })
-            .order('cycle_number', { ascending: false });
+            .order('start_date', { ascending: false });
           cycleList = cleanData || [];
         }
       }
@@ -185,75 +183,103 @@ export function useCycleData() {
     }
   }, [activeCycleId, fetchDailyEntries]);
 
-  // Save / Update Daily Entry for active cycle
-  const saveDailyEntry = async (
-    entry: Partial<DailyEntry> & { cycle_day: number },
-    options?: {
-      forceNewCycle?: boolean;
-      newCycleStartDate?: string;
-      isContinuationOfLongCycle?: boolean;
-    }
-  ) => {
-    if (!user) throw new Error('Utente non autenticato');
+  // 4. Statistics & Full Cycle Sequence (Real + Estimated)
+  const stats = useMemo(() => {
+    return computeCycleStatistics(cycles, allEntriesList);
+  }, [cycles, allEntriesList]);
 
-    const calculatedDay = activeCycle ? calculateDayFromDate(activeCycle.start_date, entry.entry_date || new Date().toISOString().split('T')[0]) : null;
-    const isCycleStale = Boolean(calculatedDay !== null && (calculatedDay > 50 || calculatedDay < 1));
+  const todayIso = new Date().toISOString().split('T')[0];
 
-    // If activeCycle is stale or options indicate custom cycle creation, route through saveEntryForDate
-    if (isCycleStale || options?.forceNewCycle || options?.newCycleStartDate || !activeCycle) {
-      const entryDate = entry.entry_date || (activeCycle ? calculateDateForDay(activeCycle.start_date, entry.cycle_day) : new Date().toISOString().split('T')[0]);
-      return saveEntryForDate(entryDate!, entry, options);
-    }
+  const fullCycleSequence: FullCycleItem[] = useMemo(() => {
+    return generateFullCycleSequence(cycles, allEntriesByDate, stats.averageCycleLength, todayIso);
+  }, [cycles, allEntriesByDate, stats, todayIso]);
 
+  // 5. Reconcile and Reindex all cycles in database chronologically
+  const reconcileAndReindexAllCycles = async () => {
+    if (!user) return;
     const client = getSupabaseClient();
-    if (!client) throw new Error('Database Supabase non connesso');
+    if (!client) return;
 
-    const entryDate = entry.entry_date || calculateDateForDay(activeCycle.start_date, entry.cycle_day) || activeCycle.start_date;
+    try {
+      // Fetch all cycles sorted chronologically ascending
+      const { data: dbCycles } = await client
+        .from('cycles')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('start_date', { ascending: true });
 
-    const payload = {
-      cycle_id: activeCycle.id,
-      user_id: user.id,
-      cycle_day: entry.cycle_day,
-      entry_date: entryDate,
-      bbt: entry.bbt !== null && entry.bbt !== undefined ? Number(entry.bbt) : null,
-      bbt_time: entry.bbt_time ?? null,
-      menstruation: entry.menstruation ?? null,
-      sensation: entry.sensation ?? null,
-      mucus_qty_symbol: entry.mucus_qty_symbol ?? null,
-      mucus_qty: entry.mucus_qty ?? null,
-      mucus_char: entry.mucus_char ?? null,
-      cervix_consistency: entry.cervix_consistency ?? null,
-      cervix_opening: entry.cervix_opening ?? null,
-      cervix_position: entry.cervix_position ?? null,
-      intercourse: entry.intercourse ?? null,
-      notes: entry.notes ?? null,
-    };
+      if (!dbCycles || dbCycles.length === 0) return;
 
-    const updatedEntry = { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry;
+      const totalCycles = dbCycles.length;
 
-    setDailyEntries(prev => ({
-      ...prev,
-      [entry.cycle_day]: updatedEntry,
-    }));
+      // Update cycle numbers and is_active flag in DB
+      for (let i = 0; i < totalCycles; i++) {
+        const c = dbCycles[i];
+        const newNumber = i + 1;
+        const [y] = c.start_date.split('-').map(Number);
+        const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
+        const calculatedMonthStr = generateMonthStr(c.start_date);
+        const isActive = i === totalCycles - 1;
 
-    setAllEntriesByDate(prev => ({
-      ...prev,
-      [entryDate]: updatedEntry,
-    }));
+        if (
+          c.cycle_number !== newNumber ||
+          c.year !== calculatedYear ||
+          c.month_str !== calculatedMonthStr ||
+          c.is_active !== isActive
+        ) {
+          await client
+            .from('cycles')
+            .update({
+              cycle_number: newNumber,
+              year: calculatedYear,
+              month_str: calculatedMonthStr,
+              is_active: isActive,
+            })
+            .eq('id', c.id);
+        }
+      }
 
-    const { error: upsertErr } = await client
-      .from('daily_entries')
-      .upsert(payload, { onConflict: 'cycle_id,cycle_day' });
+      // Reassign daily entries to proper cycle based on date boundaries
+      const { data: dbEntries } = await client
+        .from('daily_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('entry_date', { ascending: true });
 
-    if (upsertErr) {
-      console.error('Error saving entry:', upsertErr);
-      await fetchDailyEntries(activeCycle.id);
+      if (dbEntries && dbEntries.length > 0) {
+        for (const entry of dbEntries) {
+          if (!entry.entry_date) continue;
+          // Find matching cycle
+          let targetC = dbCycles[0];
+          for (let k = dbCycles.length - 1; k >= 0; k--) {
+            if (dbCycles[k].start_date <= entry.entry_date) {
+              targetC = dbCycles[k];
+              break;
+            }
+          }
+
+          const calculatedDay = Math.max(1, calculateDayFromDate(targetC.start_date, entry.entry_date) || 1);
+
+          if (entry.cycle_id !== targetC.id || entry.cycle_day !== calculatedDay) {
+            await client
+              .from('daily_entries')
+              .update({
+                cycle_id: targetC.id,
+                cycle_day: calculatedDay,
+              })
+              .eq('id', entry.id);
+          }
+        }
+      }
+
+      await fetchCycles();
       await fetchAllDailyEntries();
-      throw new Error(upsertErr.message);
+    } catch (err) {
+      console.error('Error reconciling cycles:', err);
     }
   };
 
-  // Save / Update Daily Entry for an arbitrary date (used in Calendar / Smart Dialog)
+  // 6. Save Entry For Date (Unified Pipeline used by Calendar, Today, and DetailModal)
   const saveEntryForDate = async (
     entryDate: string,
     entryData: Partial<DailyEntry>,
@@ -267,63 +293,82 @@ export function useCycleData() {
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    // Find all valid cycles sorted by date
     const sortedCycles = [...cycles]
       .filter(c => Boolean(c.start_date))
       .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
-    // Check if this entry is the first day of a period flow
     const isFirstMenstDay = isFirstDayOfPeriod(entryDate, entryData.menstruation, allEntriesByDate);
 
     let targetCycle: Cycle | null = null;
-    const targetDateObj = new Date(entryDate);
 
-    // If it's the first day of a period (and not explicitly forced otherwise) or forceNewCycle is true,
-    // we start a new cycle starting on this date (or custom start date).
-    if ((isFirstMenstDay && !options?.isContinuationOfLongCycle) || options?.forceNewCycle) {
+    // Handle new cycle creation / checkpoint
+    if (options?.forceNewCycle || (isFirstMenstDay && !options?.isContinuationOfLongCycle)) {
       const newStartDate = options?.newCycleStartDate || entryDate;
-      const prevCycle = sortedCycles.filter(c => new Date(c.start_date) < new Date(newStartDate)).pop() || activeCycle || null;
-      const calculatedCycleNum = calculateNextCycleNumberWithGap(prevCycle, newStartDate);
 
-      targetCycle = await transitionToNewCycle(newStartDate, {
-        customCycleNumber: calculatedCycleNum,
-        initialMenstruation: entryData.menstruation || undefined,
-      });
-    } else {
-      // Use estimated cycle placement for non-menstruation entries
-      const est = getEstimatedCycleForDate(entryDate, sortedCycles, 28);
-
-      if (est.isExistingCycle && est.existingCycleId) {
-        targetCycle = sortedCycles.find(c => c.id === est.existingCycleId) || null;
+      // Check if a cycle on this start date already exists
+      const existingCycleSameStart = sortedCycles.find(c => c.start_date === newStartDate);
+      if (existingCycleSameStart) {
+        targetCycle = existingCycleSameStart;
       } else {
-        // Check if a cycle with estimated start already exists
-        const existingByDate = sortedCycles.find(c => c.start_date === est.startDate);
-        if (existingByDate) {
-          targetCycle = existingByDate;
-        } else {
-          // Auto-create estimated cycle container
-          targetCycle = await transitionToNewCycle(est.startDate, {
-            customCycleNumber: est.cycleNumber,
-          });
+        const [y] = newStartDate.split('-').map(Number);
+        const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
+        const calculatedMonthStr = generateMonthStr(newStartDate);
+        const bbtMethod = activeCycle?.bbt_method || 'Vaginale';
+        const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
+
+        const { data: newCycle, error: insertErr } = await client
+          .from('cycles')
+          .insert({
+            user_id: user.id,
+            name,
+            cycle_number: (sortedCycles.length + 1),
+            year: calculatedYear,
+            month_str: calculatedMonthStr,
+            start_date: newStartDate,
+            bbt_method: bbtMethod,
+            shortest_cycle: null,
+            teacher_code: activeCycle?.teacher_code || '',
+            protocol_number: activeCycle?.protocol_number || '',
+            sigla: activeCycle?.sigla || '',
+            is_active: true,
+          })
+          .select()
+          .single();
+
+        if (insertErr) throw insertErr;
+        targetCycle = newCycle;
+      }
+
+      // Reconcile and re-index all cycles immediately
+      await reconcileAndReindexAllCycles();
+    } else {
+      // Find matching cycle for this date
+      if (sortedCycles.length > 0) {
+        for (let i = sortedCycles.length - 1; i >= 0; i--) {
+          if (sortedCycles[i].start_date <= entryDate) {
+            targetCycle = sortedCycles[i];
+            break;
+          }
         }
-      }
-
-      if (!targetCycle) {
-        targetCycle = activeCycle || sortedCycles[0] || null;
-      }
-
-      // If no cycle exists at all, start first cycle
-      if (!targetCycle) {
+        if (!targetCycle) {
+          targetCycle = sortedCycles[0];
+        }
+      } else {
+        // First cycle for brand new user
         targetCycle = await startFirstCycle(entryDate, {
           bbtMethod: 'Vaginale',
         });
       }
     }
 
-    const calculatedCycleDay = calculateDayFromDate(targetCycle.start_date, entryDate) || 1;
+    if (!targetCycle) {
+      throw new Error('Impossibile determinare il ciclo di riferimento.');
+    }
+
+    const calculatedCycleDay = Math.max(1, calculateDayFromDate(targetCycle.start_date, entryDate) || 1);
     const cycleDay = entryData.cycle_day !== undefined && entryData.cycle_day > 0 
       ? entryData.cycle_day 
-      : Math.max(1, calculatedCycleDay);
+      : calculatedCycleDay;
 
     const payload = {
       cycle_id: targetCycle.id,
@@ -346,7 +391,7 @@ export function useCycleData() {
 
     const updatedEntry = { ...payload, bbt: payload.bbt !== null ? Number(payload.bbt) : null } as DailyEntry;
 
-    // Update in memory
+    // Optimistic state update
     setAllEntriesByDate(prev => ({
       ...prev,
       [entryDate]: updatedEntry,
@@ -370,30 +415,40 @@ export function useCycleData() {
       throw new Error(upsertErr.message);
     }
 
-    // If menstruation was cleared on a cycle start_date, check if that cycle has become orphaned (no period entries left)
-    const validPeriodSymbols = ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'];
-    const isClearingPeriod = !entryData.menstruation || !validPeriodSymbols.includes(entryData.menstruation);
-
-    if (isClearingPeriod && targetCycle && targetCycle.start_date === entryDate && cycles.length > 1) {
+    // If clearing menstruation on a cycle start_date and that was a checkpoint:
+    const isClearingFlow = !isMenstrualFlow(entryData.menstruation);
+    if (isClearingFlow && targetCycle.start_date === entryDate && cycles.length > 1) {
       const { data: cycleEntries } = await client
         .from('daily_entries')
         .select('menstruation')
         .eq('cycle_id', targetCycle.id);
 
-      const hasOtherPeriod = (cycleEntries || []).some(
-        e => e.menstruation && validPeriodSymbols.includes(e.menstruation)
-      );
+      const hasOtherFlow = (cycleEntries || []).some(e => isMenstrualFlow(e.menstruation));
 
-      if (!hasOtherPeriod) {
-        console.log('Deleting empty cycle after menstruation was removed:', targetCycle);
+      if (!hasOtherFlow) {
         await client.from('cycles').delete().eq('id', targetCycle.id);
-        await fetchCycles();
-        await fetchAllDailyEntries();
+        await reconcileAndReindexAllCycles();
       }
     }
+
+    await fetchAllDailyEntries();
+    if (activeCycleId) await fetchDailyEntries(activeCycleId);
   };
 
-  // Transition to New Cycle (Automatic archive & create next)
+  // 7. Save Daily Entry wrapper
+  const saveDailyEntry = async (
+    entry: Partial<DailyEntry> & { cycle_day: number },
+    options?: {
+      forceNewCycle?: boolean;
+      newCycleStartDate?: string;
+      isContinuationOfLongCycle?: boolean;
+    }
+  ) => {
+    const entryDate = entry.entry_date || (activeCycle ? calculateDateForDay(activeCycle.start_date, entry.cycle_day) : todayIso) || todayIso;
+    return saveEntryForDate(entryDate, entry, options);
+  };
+
+  // 8. Transition to New Cycle
   const transitionToNewCycle = async (
     startDate: string,
     options?: {
@@ -403,119 +458,45 @@ export function useCycleData() {
       initialMenstruation?: DailyEntry['menstruation'];
     }
   ) => {
+    await saveEntryForDate(
+      startDate,
+      { menstruation: options?.initialMenstruation || 'Flusso' },
+      { forceNewCycle: true, newCycleStartDate: startDate }
+    );
+    await fetchCycles();
+    const updatedCycles = await getSupabaseClient()?.from('cycles').select('*').eq('user_id', user?.id).order('start_date', { ascending: false });
+    return (updatedCycles?.data && updatedCycles.data[0]) || null;
+  };
+
+  // 9. Start First Cycle
+  const startFirstCycle = async (
+    startDate: string,
+    options?: {
+      name?: string;
+      bbtMethod?: BbtMethod;
+      shortestCycle?: number | null;
+    }
+  ) => {
     if (!user) throw new Error('Per iniziare un nuovo ciclo, accedi prima con il tuo account.');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    // If the active cycle was started within the last 5 days and user is setting the real start date,
-    // adjust the active cycle's start_date instead of creating an unwanted duplicate cycle
-    const diffDaysFromActiveStart = activeCycle ? calculateDayFromDate(activeCycle.start_date, startDate) : null;
-    const isAdjustingCurrentCycleStart = Boolean(
-      activeCycle && 
-      diffDaysFromActiveStart !== null && 
-      diffDaysFromActiveStart >= 0 && 
-      diffDaysFromActiveStart <= 5
-    );
-
-    if (isAdjustingCurrentCycleStart && activeCycle) {
-      // 1. Update active cycle's start_date
-      await client
-        .from('cycles')
-        .update({ start_date: startDate })
-        .eq('id', activeCycle.id);
-
-      // 2. Delete any old entry from previous start date if different
-      if (activeCycle.start_date !== startDate) {
-        await client
-          .from('daily_entries')
-          .delete()
-          .eq('cycle_id', activeCycle.id)
-          .eq('entry_date', activeCycle.start_date);
-      }
-
-      // 3. Upsert Day 1 entry on new start date
-      await client.from('daily_entries').upsert({
-        cycle_id: activeCycle.id,
-        user_id: user.id,
-        cycle_day: 1,
-        entry_date: startDate,
-        menstruation: options?.initialMenstruation || 'Flusso',
-      }, { onConflict: 'cycle_id,cycle_day' });
-
-      await fetchCycles();
-      await fetchAllDailyEntries();
-      await fetchDailyEntries(activeCycle.id);
-      return activeCycle;
-    }
-
-    // 1. Deactivate current active cycle if creating a brand new cycle
-    if (activeCycle) {
-      await client
-        .from('cycles')
-        .update({ is_active: false })
-        .eq('id', activeCycle.id);
-    }
-
-    // 2. Prepare computed properties
     const [y] = startDate.split('-').map(Number);
     const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
     const calculatedMonthStr = generateMonthStr(startDate);
-    const calculatedShortest = options?.customShortestCycle !== undefined 
-      ? options.customShortestCycle 
-      : calculateShortestCycleFromHistory(cycles, startDate);
-
-    // Calculate progression cycle number factoring in estimated gaps if not explicitly passed
-    const sortedCycles = [...cycles]
-      .filter(c => Boolean(c.start_date))
-      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
-    const prevCycle = sortedCycles.filter(c => new Date(c.start_date) < new Date(startDate)).pop() || activeCycle || null;
-
-    // Check if a cycle with the exact same start_date already exists
-    const existingCycleSameStart = cycles.find(c => c.start_date === startDate);
-    if (existingCycleSameStart) {
-      await client
-        .from('cycles')
-        .update({ is_active: true })
-        .eq('id', existingCycleSameStart.id);
-
-      await client.from('daily_entries').upsert({
-        cycle_id: existingCycleSameStart.id,
-        user_id: user.id,
-        cycle_day: 1,
-        entry_date: startDate,
-        menstruation: options?.initialMenstruation || 'Flusso',
-      }, { onConflict: 'cycle_id,cycle_day' });
-
-      await fetchCycles();
-      setActiveCycleId(existingCycleSameStart.id);
-      return existingCycleSameStart;
-    }
-
-    // Calculate progression cycle number
-    const nextNumber = options?.customCycleNumber || calculateNextCycleNumberWithGap(prevCycle, startDate);
-
-    // Ensure cycle number is unique for this year
-    const existingNumbersForYear = new Set(cycles.filter(c => c.year === calculatedYear).map(c => c.cycle_number));
-    let safeNextNumber = Number(nextNumber);
-    while (existingNumbersForYear.has(safeNextNumber)) {
-      safeNextNumber++;
-    }
-
-    const bbtMethod = options?.customBbtMethod || activeCycle?.bbt_method || 'Vaginale';
-    const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
 
     const payload = {
       user_id: user.id,
-      name,
-      cycle_number: safeNextNumber,
+      name: options?.name || user.user_metadata?.full_name || 'Maria',
+      cycle_number: 1,
       year: calculatedYear,
       month_str: calculatedMonthStr,
       start_date: startDate,
-      bbt_method: bbtMethod,
-      shortest_cycle: calculatedShortest,
-      teacher_code: activeCycle?.teacher_code || '',
-      protocol_number: activeCycle?.protocol_number || '',
-      sigla: activeCycle?.sigla || '',
+      bbt_method: options?.bbtMethod || 'Vaginale',
+      shortest_cycle: options?.shortestCycle || null,
+      teacher_code: '',
+      protocol_number: '',
+      sigla: '',
       is_active: true,
     };
 
@@ -525,55 +506,28 @@ export function useCycleData() {
       .select()
       .single();
 
-    if (insertErr) throw new Error(insertErr.message);
+    if (insertErr) throw insertErr;
 
     if (newCycle) {
-      // Day 1 entry with initial menstruation
       await client.from('daily_entries').upsert({
         cycle_id: newCycle.id,
         user_id: user.id,
         cycle_day: 1,
         entry_date: newCycle.start_date,
-        menstruation: options?.initialMenstruation || 'Flusso',
+        menstruation: 'Flusso',
       }, { onConflict: 'cycle_id,cycle_day' });
 
       await fetchCycles();
       setActiveCycleId(newCycle.id);
     }
-
     return newCycle;
   };
 
-  // Start First Cycle for brand new user
-  const startFirstCycle = async (
-    startDate: string,
-    options?: {
-      name?: string;
-      bbtMethod?: BbtMethod;
-      shortestCycle?: number | null;
-    }
-  ) => {
-    return transitionToNewCycle(startDate, {
-      customCycleNumber: 1,
-      customBbtMethod: options?.bbtMethod || 'Vaginale',
-      customShortestCycle: options?.shortestCycle || null,
-      initialMenstruation: 'Flusso',
-    });
-  };
-
-  // Create New Cycle (Manual)
+  // 10. Create Cycle (Manual)
   const createCycle = async (cycleData: Omit<Cycle, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
     if (!user) throw new Error('Per creare un ciclo, accedi prima con il tuo account.');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
-
-    // Deactivate previous cycles if this new one is active
-    if (cycleData.is_active) {
-      await client
-        .from('cycles')
-        .update({ is_active: false })
-        .eq('user_id', user.id);
-    }
 
     const payload = {
       ...cycleData,
@@ -596,25 +550,17 @@ export function useCycleData() {
         entry_date: data.start_date,
       });
 
-      await fetchCycles();
+      await reconcileAndReindexAllCycles();
       setActiveCycleId(data.id);
     }
     return data;
   };
 
-  // Update Cycle
+  // 11. Update Cycle
   const updateCycle = async (id: string, updates: Partial<Cycle>) => {
     if (!user) throw new Error('Utente non autenticato');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
-
-    if (updates.is_active) {
-      // Deactivate others
-      await client
-        .from('cycles')
-        .update({ is_active: false })
-        .eq('user_id', user.id);
-    }
 
     const { error: updateErr } = await client
       .from('cycles')
@@ -622,10 +568,10 @@ export function useCycleData() {
       .eq('id', id);
 
     if (updateErr) throw new Error(updateErr.message);
-    await fetchCycles();
+    await reconcileAndReindexAllCycles();
   };
 
-  // Delete Cycle
+  // 12. Delete Cycle
   const deleteCycle = async (id: string) => {
     if (!user) throw new Error('Utente non autenticato');
     const client = getSupabaseClient();
@@ -633,22 +579,26 @@ export function useCycleData() {
 
     const { error: delErr } = await client.from('cycles').delete().eq('id', id);
     if (delErr) throw new Error(delErr.message);
-    await fetchCycles();
+    await reconcileAndReindexAllCycles();
   };
 
-  // Import Legacy Cycle JSON
+  // 13. Import Legacy Cycle JSON
   const importLegacyCycle = async (legacy: LegacyCycleJSON) => {
     if (!user) throw new Error("Effettua prima l'accesso con la tua email per salvare i dati sul tuo database!");
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
     const startDate = legacy.start_date || new Date().toISOString().split('T')[0];
+    const [y] = startDate.split('-').map(Number);
+    const calculatedYear = legacy.year || (!isNaN(y) ? y : new Date().getFullYear());
+    const calculatedMonthStr = legacy.month_str || generateMonthStr(startDate);
+
     const cyclePayload = {
       user_id: user.id,
       name: legacy.name || 'Ciclo Storico',
       cycle_number: Number(legacy.cycle_number) || 1,
-      year: Number(legacy.year) || new Date().getFullYear(),
-      month_str: legacy.month_str || '',
+      year: calculatedYear,
+      month_str: calculatedMonthStr,
       start_date: startDate,
       bbt_method: (legacy.bbt_method as any) || 'Vaginale',
       shortest_cycle: legacy.shortest_cycle ? Number(legacy.shortest_cycle) : null,
@@ -660,7 +610,7 @@ export function useCycleData() {
 
     const { data: cycle, error: cycleErr } = await client
       .from('cycles')
-      .upsert(cyclePayload, { onConflict: 'user_id,cycle_number,year' })
+      .upsert(cyclePayload, { onConflict: 'user_id,start_date' })
       .select()
       .single();
 
@@ -713,35 +663,22 @@ export function useCycleData() {
       }
     }
 
-    await fetchCycles();
+    // Reconcile and reindex all cycles automatically
+    await reconcileAndReindexAllCycles();
     if (cycle) {
       setActiveCycleId(cycle.id);
     }
   };
 
-  // Reset all user data (clean database for this account)
+  // 14. Reset all user data
   const resetAllUserData = async () => {
     if (!user) throw new Error('Utente non autenticato');
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    // 1. Delete all daily entries for this user
-    const { error: delEntriesErr } = await client
-      .from('daily_entries')
-      .delete()
-      .eq('user_id', user.id);
+    await client.from('daily_entries').delete().eq('user_id', user.id);
+    await client.from('cycles').delete().eq('user_id', user.id);
 
-    if (delEntriesErr) throw new Error(`Errore eliminazione misurazioni: ${delEntriesErr.message}`);
-
-    // 2. Delete all cycles for this user
-    const { error: delCyclesErr } = await client
-      .from('cycles')
-      .delete()
-      .eq('user_id', user.id);
-
-    if (delCyclesErr) throw new Error(`Errore eliminazione cicli: ${delCyclesErr.message}`);
-
-    // 3. Reset local state
     setCycles([]);
     setActiveCycleId(null);
     setDailyEntries({});
@@ -751,12 +688,14 @@ export function useCycleData() {
 
   return {
     cycles,
+    fullCycleSequence,
     activeCycle,
     activeCycleId,
     setActiveCycleId,
     dailyEntries,
     allEntriesByDate,
     allEntriesList,
+    stats,
     loading,
     error,
     refreshCycles: fetchCycles,
@@ -770,5 +709,6 @@ export function useCycleData() {
     deleteCycle,
     importLegacyCycle,
     resetAllUserData,
+    reconcileAndReindexAllCycles,
   };
 }

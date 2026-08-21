@@ -18,6 +18,7 @@ import { InstallModal } from './components/pwa/InstallModal';
 const MainContent: React.FC = () => {
   const {
     cycles,
+    fullCycleSequence,
     activeCycle,
     activeCycleId,
     setActiveCycleId,
@@ -33,6 +34,7 @@ const MainContent: React.FC = () => {
     deleteCycle,
     importLegacyCycle,
     resetAllUserData,
+    reconcileAndReindexAllCycles,
   } = useCycleData();
 
   const { isIOS, isStandalone, triggerInstall } = usePWAInstall();
@@ -73,9 +75,9 @@ const MainContent: React.FC = () => {
   const nextCycleNumber = cycles.length > 0 ? Math.max(...cycles.map((c) => c.cycle_number)) + 1 : 1;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF8F5]">
+    <div className="min-h-screen bg-sand-50/50 flex flex-col font-sans text-stone-800 antialiased selection:bg-nature-200">
       
-      {/* Header */}
+      {/* Header with cycle selector and Auth */}
       <Header
         activeCycle={activeCycle}
         cycles={cycles}
@@ -92,8 +94,8 @@ const MainContent: React.FC = () => {
             activeCycle={activeCycle}
             allCycles={cycles}
             dailyEntries={dailyEntries}
-            onSaveEntry={saveDailyEntry}
-            onTransitionToNewCycle={transitionToNewCycle}
+            allEntriesByDate={allEntriesByDate}
+            onSaveEntryForDate={saveEntryForDate}
             onStartFirstCycle={startFirstCycle}
             onOpenNewCycleModal={handleOpenNewCycle}
           />
@@ -129,15 +131,20 @@ const MainContent: React.FC = () => {
         {activeTab === 'cycles' && (
           <CyclesListView
             cycles={cycles}
+            fullCycleSequence={fullCycleSequence}
             activeCycleId={activeCycleId}
             onSelectActiveCycle={(id) => {
               setActiveCycleId(id);
               setActiveTab('chart');
             }}
+            onSelectEstimatedCycle={(startDate) => {
+              setActiveTab('calendar');
+            }}
             onOpenNewCycleModal={handleOpenNewCycle}
             onOpenEditCycleModal={handleOpenEditCycle}
             onDeleteCycle={deleteCycle}
             onImportLegacy={importLegacyCycle}
+            onReindexCycles={reconcileAndReindexAllCycles}
             onOpenAuth={() => setIsAuthOpen(true)}
           />
         )}

@@ -4,12 +4,14 @@ import { TemperaturePicker } from '../today/TemperaturePicker';
 import { VisualChipsPicker } from '../today/VisualChipsPicker';
 import {
   formatDateItalian,
+  isMenstrualFlow,
   SENSATION_LABELS,
   INTERCOURSE_LABELS,
   CERVIX_CONSISTENCY_LABELS,
   CERVIX_OPENING_LABELS,
   CERVIX_POSITION_LABELS,
 } from '../../utils/symptothermal';
+import { addDaysIso } from '../../utils/cyclePredictions';
 import {
   X,
   Calendar as CalendarIcon,
@@ -27,6 +29,7 @@ import {
 interface DayDetailModalProps {
   isOpen: boolean;
   dayData: CalendarDayData | null;
+  allEntriesByDate?: Record<string, DailyEntry>;
   bbtMethod?: BbtMethod;
   onClose: () => void;
   onSaveEntry: (
@@ -43,6 +46,7 @@ interface DayDetailModalProps {
 export const DayDetailModal: React.FC<DayDetailModalProps> = ({
   isOpen,
   dayData,
+  allEntriesByDate = {},
   bbtMethod = 'Vaginale',
   onClose,
   onSaveEntry,
@@ -119,14 +123,14 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
     newCycleStartDate?: string;
     isContinuationOfLongCycle?: boolean;
   }) => {
-    // If recording a new menstruation and not already decided
-    const isNewBleeding = Boolean(
-      menstruation &&
-      ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'].includes(menstruation) &&
-      !entry?.menstruation
-    );
+    // Check if new entry has genuine flow (Flusso / Abbondante)
+    const isEnteringFlow = isMenstrualFlow(menstruation);
+    const prevDate = addDaysIso(dayData.date, -1);
+    const prevEntry = allEntriesByDate[prevDate];
+    const prevHadFlow = Boolean(prevEntry && isMenstrualFlow(prevEntry.menstruation));
 
-    if (isNewBleeding && !options) {
+    // If entering flow on a date not preceded by flow, and not explicitly decided yet -> ask user
+    if (isEnteringFlow && !prevHadFlow && !options) {
       setShowMenstChoiceModal(true);
       return;
     }
