@@ -55,7 +55,36 @@ export function useCycleData() {
 
       if (fetchErr) throw fetchErr;
 
-      const cycleList: Cycle[] = data || [];
+      let cycleList: Cycle[] = data || [];
+
+      // Auto-reconciliation of ghost/orphaned cycles (without any registered menstruation)
+      if (cycleList.length > 1) {
+        const { data: allEnts } = await client
+          .from('daily_entries')
+          .select('cycle_id, menstruation')
+          .eq('user_id', user.id);
+
+        const validPeriodSymbols = ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'];
+        const cycleIdsWithPeriod = new Set(
+          (allEnts || [])
+            .filter(e => e.menstruation && validPeriodSymbols.includes(e.menstruation))
+            .map(e => e.cycle_id)
+        );
+
+        const ghostCycles = cycleList.filter(c => !cycleIdsWithPeriod.has(c.id));
+        if (ghostCycles.length > 0 && ghostCycles.length < cycleList.length) {
+          for (const ghost of ghostCycles) {
+            await client.from('cycles').delete().eq('id', ghost.id);
+          }
+          const { data: cleanData } = await client
+            .from('cycles')
+            .select('*')
+            .order('year', { ascending: false })
+            .order('cycle_number', { ascending: false });
+          cycleList = cleanData || [];
+        }
+      }
+
       setCycles(cycleList);
 
       if (cycleList.length > 0) {
@@ -339,6 +368,28 @@ export function useCycleData() {
       await fetchAllDailyEntries();
       if (activeCycle) await fetchDailyEntries(activeCycle.id);
       throw new Error(upsertErr.message);
+    }
+
+    // If menstruation was cleared on a cycle start_date, check if that cycle has become orphaned (no period entries left)
+    const validPeriodSymbols = ['Flusso', 'Abbondante', 'Spotting', 'M', 'M+', 'm'];
+    const isClearingPeriod = !entryData.menstruation || !validPeriodSymbols.includes(entryData.menstruation);
+
+    if (isClearingPeriod && targetCycle && targetCycle.start_date === entryDate && cycles.length > 1) {
+      const { data: cycleEntries } = await client
+        .from('daily_entries')
+        .select('menstruation')
+        .eq('cycle_id', targetCycle.id);
+
+      const hasOtherPeriod = (cycleEntries || []).some(
+        e => e.menstruation && validPeriodSymbols.includes(e.menstruation)
+      );
+
+      if (!hasOtherPeriod) {
+        console.log('Deleting empty cycle after menstruation was removed:', targetCycle);
+        await client.from('cycles').delete().eq('id', targetCycle.id);
+        await fetchCycles();
+        await fetchAllDailyEntries();
+      }
     }
   };
 
