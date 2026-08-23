@@ -404,15 +404,33 @@ export function useCycleData() {
       }));
     }
 
-    const { error: upsertErr } = await client
+    // Safely check if daily entry already exists for this cycle and day
+    const { data: existingDailyEntry } = await client
       .from('daily_entries')
-      .upsert(payload, { onConflict: 'cycle_id,cycle_day' });
+      .select('id')
+      .eq('cycle_id', targetCycle.id)
+      .eq('cycle_day', cycleDay)
+      .maybeSingle();
 
-    if (upsertErr) {
-      console.error('Error saving entry for date:', upsertErr);
+    let saveErr = null;
+    if (existingDailyEntry?.id) {
+      const { error } = await client
+        .from('daily_entries')
+        .update(payload)
+        .eq('id', existingDailyEntry.id);
+      saveErr = error;
+    } else {
+      const { error } = await client
+        .from('daily_entries')
+        .insert(payload);
+      saveErr = error;
+    }
+
+    if (saveErr) {
+      console.error('Error saving entry for date:', saveErr);
       await fetchAllDailyEntries();
       if (activeCycle) await fetchDailyEntries(activeCycle.id);
-      throw new Error(upsertErr.message);
+      throw new Error(saveErr.message);
     }
 
     // If clearing menstruation on a cycle start_date and that was a checkpoint:
@@ -509,13 +527,13 @@ export function useCycleData() {
     if (insertErr) throw insertErr;
 
     if (newCycle) {
-      await client.from('daily_entries').upsert({
+      await client.from('daily_entries').insert({
         cycle_id: newCycle.id,
         user_id: user.id,
         cycle_day: 1,
         entry_date: newCycle.start_date,
         menstruation: 'Flusso',
-      }, { onConflict: 'cycle_id,cycle_day' });
+      });
 
       await fetchCycles();
       setActiveCycleId(newCycle.id);
@@ -608,15 +626,33 @@ export function useCycleData() {
       is_active: false,
     };
 
-    const { data: cycle, error: cycleErr } = await client
+    // Safely check if a cycle with this start_date already exists for this user
+    const { data: existingCycle } = await client
       .from('cycles')
-      .upsert(cyclePayload, { onConflict: 'user_id,start_date' })
-      .select()
-      .single();
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('start_date', startDate)
+      .maybeSingle();
 
-    if (cycleErr) throw new Error(`Errore creazione ciclo: ${cycleErr.message}`);
+    let cycleId = existingCycle?.id;
 
-    if (cycle && legacy.daily_entries) {
+    if (cycleId) {
+      const { error: updateErr } = await client
+        .from('cycles')
+        .update(cyclePayload)
+        .eq('id', cycleId);
+      if (updateErr) throw new Error(`Errore aggiornamento ciclo: ${updateErr.message}`);
+    } else {
+      const { data: inserted, error: insertErr } = await client
+        .from('cycles')
+        .insert(cyclePayload)
+        .select()
+        .single();
+      if (insertErr) throw new Error(`Errore creazione ciclo: ${insertErr.message}`);
+      cycleId = inserted?.id;
+    }
+
+    if (cycleId && legacy.daily_entries) {
       const dailyRows: any[] = [];
 
       for (const [key, raw] of Object.entries(legacy.daily_entries)) {
@@ -636,7 +672,7 @@ export function useCycleData() {
           : (calculateDateForDay(startDate, cycleDay) || startDate);
 
         dailyRows.push({
-          cycle_id: cycle.id,
+          cycle_id: cycleId,
           user_id: user.id,
           cycle_day: cycleDay,
           entry_date: dateStr,
@@ -656,17 +692,23 @@ export function useCycleData() {
       }
 
       if (dailyRows.length > 0) {
+        // Clean existing daily entries for this cycle and insert the fresh set
+        await client
+          .from('daily_entries')
+          .delete()
+          .eq('cycle_id', cycleId);
+
         const { error: entriesErr } = await client
           .from('daily_entries')
-          .upsert(dailyRows, { onConflict: 'cycle_id,cycle_day' });
+          .insert(dailyRows);
         if (entriesErr) throw new Error(`Errore importazione voci giornaliere: ${entriesErr.message}`);
       }
     }
 
     // Reconcile and reindex all cycles automatically
     await reconcileAndReindexAllCycles();
-    if (cycle) {
-      setActiveCycleId(cycle.id);
+    if (cycleId) {
+      setActiveCycleId(cycleId);
     }
   };
 
