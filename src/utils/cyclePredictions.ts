@@ -126,22 +126,23 @@ export interface PredictedDateMap {
 
 /**
  * Generates predictions for a range of dates [rangeStart, rangeEnd]
- * starting exclusively from the first recorded checkpoint onward.
+ * based on the full sequence of cycles (including backward and forward projections).
  */
 export function generatePredictions(
   rangeStartStr: string,
   rangeEndStr: string,
   cycles: Cycle[],
-  stats: CycleStatistics
+  stats: CycleStatistics,
+  fullCycleSequence?: FullCycleItem[]
 ): PredictedDateMap {
   const result: PredictedDateMap = {};
-  const validCycles = [...cycles]
-    .filter((c) => Boolean(c.start_date))
-    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+  const sequence = fullCycleSequence && fullCycleSequence.length > 0
+    ? fullCycleSequence
+    : generateFullCycleSequence(cycles, {}, stats.averageCycleLength || 28);
 
-  if (validCycles.length === 0) return result;
+  if (sequence.length === 0) return result;
 
-  const firstRecordedStart = validCycles[0].start_date;
+  const firstRecordedStart = sequence[0].start_date;
   const cycleLen = stats.averageCycleLength || 28;
   const periodLen = stats.averagePeriodLength || 5;
   const lutealLen = stats.averageLutealPhase || 14;
@@ -182,48 +183,24 @@ export function generatePredictions(
     }
   };
 
-  // A. Predictions for recorded cycles and gaps between them
-  for (let i = 0; i < validCycles.length; i++) {
-    const curr = validCycles[i];
-    const c1Start = curr.start_date;
+  // Predictions across the full cycle sequence
+  for (let i = 0; i < sequence.length; i++) {
+    const curr = sequence[i];
+    const next = i < sequence.length - 1 ? sequence[i + 1] : null;
+    markPredictedCycle(curr.start_date, next?.start_date);
+  }
 
-    if (i < validCycles.length - 1) {
-      const next = validCycles[i + 1];
-      const c2Start = next.start_date;
-      const daysBetween = calculateDayFromDate(c1Start, c2Start);
+  // Project future cycles from latest sequence item up to rangeEndStr and 18 months ahead
+  const latestItem = sequence[sequence.length - 1];
+  let projectedStart = addDaysIso(latestItem.start_date, latestItem.length_days || cycleLen);
+  const rangeEndDate = new Date(rangeEndStr);
+  const maxLimit = new Date();
+  maxLimit.setFullYear(maxLimit.getFullYear() + 2);
 
-      if (daysBetween !== null && daysBetween <= (cycleLen + 5)) {
-        // Normal cycle duration between checkpoints
-        markPredictedCycle(c1Start, c2Start);
-      } else {
-        // Gap > cycleLen: mark cycle 1 prediction based on cycleLen
-        markPredictedCycle(c1Start, addDaysIso(c1Start, cycleLen));
-
-        // Step through intermediate estimated cycles
-        let stepStart = addDaysIso(c1Start, cycleLen);
-        while (stepStart) {
-          const daysToNext = calculateDayFromDate(stepStart, c2Start);
-          if (daysToNext === null || daysToNext <= (cycleLen * 0.7)) break;
-          const nextEst = addDaysIso(stepStart, cycleLen);
-          markPredictedCycle(stepStart, nextEst < c2Start ? nextEst : c2Start);
-          stepStart = nextEst;
-        }
-      }
-    } else {
-      // Latest recorded cycle
-      markPredictedCycle(c1Start, addDaysIso(c1Start, cycleLen));
-
-      // Project future cycles from latest cycle up to rangeEndStr and 18 months ahead
-      let projectedStart = addDaysIso(c1Start, cycleLen);
-      const rangeEndDate = new Date(rangeEndStr);
-      const maxLimit = new Date();
-      maxLimit.setFullYear(maxLimit.getFullYear() + 2);
-
-      while (new Date(projectedStart) <= rangeEndDate && new Date(projectedStart) <= maxLimit) {
-        markPredictedCycle(projectedStart, addDaysIso(projectedStart, cycleLen));
-        projectedStart = addDaysIso(projectedStart, cycleLen);
-      }
-    }
+  while (new Date(projectedStart) <= rangeEndDate && new Date(projectedStart) <= maxLimit) {
+    const nextEst = addDaysIso(projectedStart, cycleLen);
+    markPredictedCycle(projectedStart, nextEst);
+    projectedStart = nextEst;
   }
 
   return result;
@@ -258,8 +235,6 @@ export function buildMonthCalendar(
   const endIso = formatDateIso(endDate);
   const todayIso = formatDateIso(new Date());
 
-  const predictions = generatePredictions(startIso, endIso, cycles, stats);
-
   // Generate full sequence of real + estimated cycles
   const fullCycleSequence = generateFullCycleSequence(
     cycles,
@@ -268,11 +243,9 @@ export function buildMonthCalendar(
     todayIso
   );
 
-  const validCycles = [...cycles]
-    .filter((c) => Boolean(c.start_date))
-    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+  const predictions = generatePredictions(startIso, endIso, cycles, stats, fullCycleSequence);
 
-  const firstCheckpointDate = validCycles.length > 0 ? validCycles[0].start_date : null;
+  const firstSequenceStartDate = fullCycleSequence.length > 0 ? fullCycleSequence[0].start_date : null;
 
   const days: CalendarDayData[] = [];
 
@@ -291,8 +264,8 @@ export function buildMonthCalendar(
     let cycleNumber: number | undefined;
     let cycleDay: number | undefined = entry?.cycle_day;
 
-    // Resolve cycle number and cycle day from fullCycleSequence if at or after first checkpoint
-    if (firstCheckpointDate && dateIso >= firstCheckpointDate && fullCycleSequence.length > 0) {
+    // Resolve cycle number and cycle day from fullCycleSequence if at or after first sequence date
+    if (firstSequenceStartDate && dateIso >= firstSequenceStartDate && fullCycleSequence.length > 0) {
       // Find matching cycle in sequence
       let matchedCycle = fullCycleSequence[0];
       for (let s = fullCycleSequence.length - 1; s >= 0; s--) {

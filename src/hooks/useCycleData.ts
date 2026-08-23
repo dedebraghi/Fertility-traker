@@ -212,17 +212,19 @@ export function useCycleData() {
 
       const totalCycles = dbCycles.length;
 
-      // Update cycle numbers and is_active flag in DB
+      // Update cycle metadata and is_active flag in DB, preserving explicit cycle numbers
       for (let i = 0; i < totalCycles; i++) {
         const c = dbCycles[i];
-        const newNumber = i + 1;
         const [y] = c.start_date.split('-').map(Number);
         const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
         const calculatedMonthStr = generateMonthStr(c.start_date);
         const isActive = i === totalCycles - 1;
 
+        // Keep explicit cycle_number if valid; otherwise default to i + 1
+        const targetCycleNumber = c.cycle_number > 0 ? c.cycle_number : (i + 1);
+
         if (
-          c.cycle_number !== newNumber ||
+          c.cycle_number !== targetCycleNumber ||
           c.year !== calculatedYear ||
           c.month_str !== calculatedMonthStr ||
           c.is_active !== isActive
@@ -230,7 +232,7 @@ export function useCycleData() {
           await client
             .from('cycles')
             .update({
-              cycle_number: newNumber,
+              cycle_number: targetCycleNumber,
               year: calculatedYear,
               month_str: calculatedMonthStr,
               is_active: isActive,
@@ -239,7 +241,7 @@ export function useCycleData() {
         }
       }
 
-      // Reassign daily entries to proper cycle based on date boundaries
+      // Reassign daily entries to proper cycle based on strict start_date boundaries
       const { data: dbEntries } = await client
         .from('daily_entries')
         .select('*')
@@ -249,7 +251,8 @@ export function useCycleData() {
       if (dbEntries && dbEntries.length > 0) {
         for (const entry of dbEntries) {
           if (!entry.entry_date) continue;
-          // Find matching cycle
+          
+          // Find matching cycle where start_date <= entry_date < next_cycle.start_date
           let targetC = dbCycles[0];
           for (let k = dbCycles.length - 1; k >= 0; k--) {
             if (dbCycles[k].start_date <= entry.entry_date) {
@@ -606,15 +609,26 @@ export function useCycleData() {
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
-    const startDate = legacy.start_date || new Date().toISOString().split('T')[0];
+    let startDate = legacy.start_date;
+    if (!startDate && legacy.daily_entries) {
+      const day1 = legacy.daily_entries['1'] || Object.values(legacy.daily_entries)[0];
+      if (day1?.date) {
+        startDate = typeof day1.date === 'string' ? day1.date.split('T')[0] : day1.date;
+      }
+    }
+    if (!startDate) {
+      startDate = new Date().toISOString().split('T')[0];
+    }
+
     const [y] = startDate.split('-').map(Number);
     const calculatedYear = legacy.year || (!isNaN(y) ? y : new Date().getFullYear());
     const calculatedMonthStr = legacy.month_str || generateMonthStr(startDate);
+    const cycleNum = Number(legacy.cycle_number) > 0 ? Number(legacy.cycle_number) : 1;
 
     const cyclePayload = {
       user_id: user.id,
-      name: legacy.name || 'Ciclo Storico',
-      cycle_number: Number(legacy.cycle_number) || 1,
+      name: legacy.name || `Ciclo ${cycleNum}`,
+      cycle_number: cycleNum,
       year: calculatedYear,
       month_str: calculatedMonthStr,
       start_date: startDate,
@@ -626,13 +640,15 @@ export function useCycleData() {
       is_active: false,
     };
 
-    // Safely check if a cycle with this start_date already exists for this user
-    const { data: existingCycle } = await client
+    // Safely check if a cycle with this start_date or cycle_number already exists
+    const { data: existingCycles } = await client
       .from('cycles')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('start_date', startDate)
-      .maybeSingle();
+      .select('id, start_date, cycle_number')
+      .eq('user_id', user.id);
+
+    const existingCycle = (existingCycles || []).find(
+      c => c.start_date === startDate || c.cycle_number === cycleNum
+    );
 
     let cycleId = existingCycle?.id;
 

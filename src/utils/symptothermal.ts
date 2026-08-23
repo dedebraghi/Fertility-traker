@@ -507,7 +507,91 @@ export function getEstimatedCycleForDate(
   const diffDays = calculateDayFromDate(latestCycle.start_date, dateStr) || 1;
   const cycleLen = avgCycleLength || 28;
 
-  // If within the same cycle period (up to cycleLen)
+/**
+ * Estimates the cycle number and cycle day for a given date when there is no active cycle
+ * or when adding an entry on a late date or past date, factoring in gap calculation and backward estimation.
+ */
+export function getEstimatedCycleForDate(
+  dateStr: string,
+  cycles: Cycle[],
+  avgCycleLength = 28
+): {
+  cycleNumber: number;
+  startDate: string;
+  cycleDay: number;
+  isExistingCycle: boolean;
+  existingCycleId?: string;
+} {
+  const cycleLen = Math.max(20, Math.min(45, avgCycleLength || 28));
+
+  const validCycles = (cycles || [])
+    .filter((c) => Boolean(c && c.start_date))
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+
+  if (validCycles.length === 0) {
+    return {
+      cycleNumber: 1,
+      startDate: dateStr,
+      cycleDay: 1,
+      isExistingCycle: false,
+    };
+  }
+
+  // 1. Check if date falls exactly into one of the existing real cycles
+  for (let i = 0; i < validCycles.length; i++) {
+    const curr = validCycles[i];
+    const next = i < validCycles.length - 1 ? validCycles[i + 1] : null;
+
+    if (dateStr >= curr.start_date && (!next || dateStr < next.start_date)) {
+      const day = calculateDayFromDate(curr.start_date, dateStr) || 1;
+      const isWithinRealSpan = day <= (curr.shortest_cycle || cycleLen + 15);
+
+      if (isWithinRealSpan || !next) {
+        return {
+          cycleNumber: curr.cycle_number,
+          startDate: curr.start_date,
+          cycleDay: day,
+          isExistingCycle: true,
+          existingCycleId: curr.id,
+        };
+      }
+    }
+  }
+
+  // 2. Check if date is BEFORE the first recorded cycle -> Backward estimation
+  const firstCycle = validCycles[0];
+  if (dateStr < firstCycle.start_date) {
+    const daysBefore = calculateDayFromDate(dateStr, firstCycle.start_date);
+    if (daysBefore !== null && daysBefore > 0) {
+      const cyclesBefore = Math.ceil(daysBefore / cycleLen);
+      const estimatedCycleNum = Math.max(1, (firstCycle.cycle_number || 1) - cyclesBefore);
+      const estStartOffset = cyclesBefore * cycleLen;
+      const estStartDate = addDaysIso(firstCycle.start_date, -estStartOffset);
+      const estDay = calculateDayFromDate(estStartDate, dateStr) || 1;
+
+      return {
+        cycleNumber: estimatedCycleNum,
+        startDate: estStartDate,
+        cycleDay: Math.max(1, estDay),
+        isExistingCycle: false,
+      };
+    }
+  }
+
+  // 3. Beyond the latest cycle -> Forward estimation
+  const latestCycle = validCycles[validCycles.length - 1];
+  const diffDays = calculateDayFromDate(latestCycle.start_date, dateStr);
+
+  if (diffDays === null || diffDays <= 0) {
+    return {
+      cycleNumber: latestCycle.cycle_number,
+      startDate: latestCycle.start_date,
+      cycleDay: 1,
+      isExistingCycle: true,
+      existingCycleId: latestCycle.id,
+    };
+  }
+
   if (diffDays <= cycleLen) {
     return {
       cycleNumber: latestCycle.cycle_number,
@@ -518,19 +602,9 @@ export function getEstimatedCycleForDate(
     };
   }
 
-  // If beyond cycleLen, calculate intermediate estimated cycles
   const cyclesPassed = Math.floor((diffDays - 1) / cycleLen);
   const estimatedCycleNumber = (latestCycle.cycle_number || 1) + cyclesPassed;
-  
-  // Calculate start date of this estimated cycle
-  const [y, m, d] = latestCycle.start_date.split('-').map(Number);
-  const estStartDate = new Date(y, m - 1, d);
-  estStartDate.setDate(estStartDate.getDate() + (cyclesPassed * cycleLen));
-  const estY = estStartDate.getFullYear();
-  const estM = String(estStartDate.getMonth() + 1).padStart(2, '0');
-  const estD = String(estStartDate.getDate()).padStart(2, '0');
-  const estimatedStartDateStr = `${estY}-${estM}-${estD}`;
-
+  const estimatedStartDateStr = addDaysIso(latestCycle.start_date, cyclesPassed * cycleLen);
   const estimatedCycleDay = calculateDayFromDate(estimatedStartDateStr, dateStr) || 1;
 
   return {
@@ -542,8 +616,8 @@ export function getEstimatedCycleForDate(
 }
 
 /**
- * Generates the complete, ordered sequence of all cycles (real database cycles + estimated gap/active cycles)
- * starting from the very first recorded cycle up to the current date.
+ * Generates the complete, ordered sequence of all cycles (real database cycles + backward/forward/intermediate estimated cycles)
+ * ensuring retroactive history from Cycle 1 and strict chronological boundaries for multiple cycles in same month.
  */
 export function generateFullCycleSequence(
   cycles: Cycle[],
@@ -562,16 +636,38 @@ export function generateFullCycleSequence(
   const cycleLen = Math.max(20, Math.min(45, avgCycleLength || 28));
   const rawItems: {
     id?: string;
+    cycleNumber?: number;
     startDate: string;
     isEstimated: boolean;
     isActive: boolean;
     realCycle?: Cycle;
   }[] = [];
 
+  // A. Backward estimation if the first real cycle is > 1 (e.g. Cycle 2 or Cycle 4 imported first)
+  const firstRealCycle = validCycles[0];
+  const firstCycleNum = Number(firstRealCycle.cycle_number) || 1;
+
+  if (firstCycleNum > 1) {
+    for (let cNum = 1; cNum < firstCycleNum; cNum++) {
+      const offsetDays = (firstCycleNum - cNum) * cycleLen;
+      const estStart = addDaysIso(firstRealCycle.start_date, -offsetDays);
+      rawItems.push({
+        cycleNumber: cNum,
+        startDate: estStart,
+        isEstimated: true,
+        isActive: false,
+      });
+    }
+  }
+
+  // B. Real cycles and intermediate gap estimations
   for (let i = 0; i < validCycles.length; i++) {
     const current = validCycles[i];
+    const currentNum = Number(current.cycle_number) || (firstCycleNum + i);
+
     rawItems.push({
       id: current.id,
+      cycleNumber: currentNum,
       startDate: current.start_date,
       isEstimated: false,
       isActive: Boolean(current.is_active),
@@ -580,27 +676,49 @@ export function generateFullCycleSequence(
 
     if (i < validCycles.length - 1) {
       const next = validCycles[i + 1];
+      const nextNum = Number(next.cycle_number) || (currentNum + 1);
       const daysToNext = calculateDayFromDate(current.start_date, next.start_date);
-      if (daysToNext !== null && daysToNext > (cycleLen + 5)) {
-        let stepStart = calculateDateForDay(current.start_date, cycleLen + 1);
+
+      // If next cycle number has a gap (e.g. Cycle 2 -> Cycle 4, missing Cycle 3)
+      if (nextNum > currentNum + 1) {
+        const missingCount = nextNum - currentNum - 1;
+        const stepDays = daysToNext !== null ? Math.round(daysToNext / (missingCount + 1)) : cycleLen;
+
+        for (let m = 1; m <= missingCount; m++) {
+          const stepNum = currentNum + m;
+          const stepStart = addDaysIso(current.start_date, m * stepDays);
+          rawItems.push({
+            cycleNumber: stepNum,
+            startDate: stepStart,
+            isEstimated: true,
+            isActive: false,
+          });
+        }
+      } else if (daysToNext !== null && daysToNext > (cycleLen + 10)) {
+        // Gap in days without explicit cycle number difference
+        let stepStart = addDaysIso(current.start_date, cycleLen);
+        let stepCount = 1;
         while (stepStart) {
           const daysFromStepToNext = calculateDayFromDate(stepStart, next.start_date);
           if (daysFromStepToNext === null || daysFromStepToNext <= (cycleLen * 0.7)) {
             break;
           }
           rawItems.push({
+            cycleNumber: currentNum + stepCount,
             startDate: stepStart,
             isEstimated: true,
             isActive: false,
           });
-          stepStart = calculateDateForDay(stepStart, cycleLen + 1);
+          stepStart = addDaysIso(stepStart, cycleLen);
+          stepCount++;
         }
       }
     } else {
-      // Last real cycle: check if it has been surpassed by today
+      // Last real cycle: forward projection if time has elapsed
       const daysSinceStart = calculateDayFromDate(current.start_date, todayIso);
       if (daysSinceStart !== null && daysSinceStart > (cycleLen + 5)) {
-        let stepStart = calculateDateForDay(current.start_date, cycleLen + 1);
+        let stepStart = addDaysIso(current.start_date, cycleLen);
+        let stepIndex = 1;
         while (stepStart) {
           const daysFromStepToToday = calculateDayFromDate(stepStart, todayIso);
           if (daysFromStepToToday === null || daysFromStepToToday < 1) {
@@ -608,25 +726,28 @@ export function generateFullCycleSequence(
           }
           const isTodayInside = daysFromStepToToday >= 1 && daysFromStepToToday <= cycleLen;
           rawItems.push({
+            cycleNumber: currentNum + stepIndex,
             startDate: stepStart,
             isEstimated: true,
             isActive: isTodayInside,
           });
           if (isTodayInside) break;
-          stepStart = calculateDateForDay(stepStart, cycleLen + 1);
+          stepStart = addDaysIso(stepStart, cycleLen);
+          stepIndex++;
         }
       }
     }
   }
 
-  // Sort chronologically and assign final metadata
+  // Sort chronologically ascending
   rawItems.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
-  // Count entries by cycle / date range
+  // Count entries and assign sequence items
   const allEntriesList = Object.values(allEntriesByDate);
 
   const fullSequence: FullCycleItem[] = rawItems.map((item, index) => {
-    const cycleNumber = index + 1;
+    // If cycleNumber is explicitly defined, preserve it; otherwise fallback to sequential 1-based index
+    const cycleNumber = item.cycleNumber !== undefined ? item.cycleNumber : (index + 1);
     const [y] = item.startDate.split('-').map(Number);
     const year = !isNaN(y) ? y : new Date().getFullYear();
     const monthStr = item.realCycle?.month_str || generateMonthStr(item.startDate);
@@ -639,8 +760,8 @@ export function generateFullCycleSequence(
       const nextStart = rawItems[index + 1].startDate;
       const daysBetween = calculateDayFromDate(item.startDate, nextStart);
       if (daysBetween !== null) {
-        lengthDays = daysBetween - 1;
-        endDate = calculateDateForDay(item.startDate, lengthDays) || undefined;
+        lengthDays = Math.max(1, daysBetween - 1);
+        endDate = addDaysIso(item.startDate, lengthDays - 1);
       }
     } else {
       const daysToToday = calculateDayFromDate(item.startDate, todayIso);
