@@ -1,3 +1,30 @@
+import { Cycle, DailyEntry, FullCycleItem } from '../types';
+
+/**
+ * Format a Date object to YYYY-MM-DD string
+ */
+export function formatDateIso(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Add or subtract days to/from a YYYY-MM-DD string safely
+ */
+export function addDaysIso(dateStr: string, days: number): string {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + days);
+    return formatDateIso(date);
+  } catch {
+    return dateStr;
+  }
+}
+
 export function calculateDateForDay(startDateStr: string, cycleDay: number): string | null {
   if (!startDateStr || cycleDay < 1) return null;
   try {
