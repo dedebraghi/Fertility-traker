@@ -23,6 +23,8 @@ import {
 interface TodayViewProps {
   activeCycle: Cycle | null;
   allCycles: Cycle[];
+  fullCycleSequence?: FullCycleItem[];
+  stats?: CycleStatistics;
   dailyEntries: Record<number, DailyEntry>;
   allEntriesByDate?: Record<string, DailyEntry>;
   onSaveEntryForDate: (
@@ -48,6 +50,8 @@ interface TodayViewProps {
 export const TodayView: React.FC<TodayViewProps> = ({
   activeCycle,
   allCycles,
+  fullCycleSequence = [],
+  stats,
   allEntriesByDate = {},
   onSaveEntryForDate,
   onStartFirstCycle,
@@ -82,10 +86,30 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [intercourse, setIntercourse] = useState<DailyEntry['intercourse']>(null);
   const [notes, setNotes] = useState<string | null>(null);
 
-  // Current cycle projection for selectedDate
+  // Current cycle projection for selectedDate directly from fullCycleSequence or getEstimatedCycleForDate
   const cycleInfo = useMemo(() => {
-    return getEstimatedCycleForDate(selectedDate, allCycles || [], 28);
-  }, [selectedDate, allCycles]);
+    if (fullCycleSequence && fullCycleSequence.length > 0) {
+      let matched = fullCycleSequence[0];
+      for (let s = fullCycleSequence.length - 1; s >= 0; s--) {
+        if (fullCycleSequence[s].start_date <= selectedDate) {
+          matched = fullCycleSequence[s];
+          break;
+        }
+      }
+      if (matched) {
+        const day = calculateDayFromDate(matched.start_date, selectedDate) || 1;
+        return {
+          cycleNumber: matched.cycle_number,
+          startDate: matched.start_date,
+          cycleDay: Math.max(1, day),
+          isExistingCycle: !matched.is_estimated && Boolean(matched.id),
+          existingCycleId: matched.id,
+          isEstimated: Boolean(matched.is_estimated),
+        };
+      }
+    }
+    return getEstimatedCycleForDate(selectedDate, allCycles || [], stats?.averageCycleLength || 28);
+  }, [selectedDate, fullCycleSequence, allCycles, stats]);
 
   const isToday = selectedDate === todayISO;
 
@@ -299,9 +323,9 @@ export const TodayView: React.FC<TodayViewProps> = ({
           </button>
 
           <div className="text-center">
-            <div className="flex items-center justify-center gap-1.5 mb-0.5">
+            <div className="flex items-center justify-center gap-1.5 mb-0.5 flex-wrap">
               <span className="text-xs uppercase font-extrabold tracking-widest text-nature-200">
-                Ciclo #{cycleInfo.cycleNumber} • Giorno del Ciclo
+                Ciclo #{cycleInfo.cycleNumber} {cycleInfo.isEstimated ? '(Stimato)' : ''} • Giorno del Ciclo
               </span>
               {isToday && (
                 <span className="px-2 py-0.2 rounded-full bg-white/20 text-white text-[10px] font-bold">

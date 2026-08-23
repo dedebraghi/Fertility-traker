@@ -57,20 +57,18 @@ export function useCycleData() {
 
       let cycleList: Cycle[] = data || [];
 
-      // Auto-reconciliation of ghost/orphaned cycles (without any registered menstruation)
+      // Auto-reconciliation of ghost/orphaned cycles (without any registered daily entries)
       if (cycleList.length > 1) {
         const { data: allEnts } = await client
           .from('daily_entries')
-          .select('cycle_id, menstruation')
+          .select('cycle_id')
           .eq('user_id', user.id);
 
-        const cycleIdsWithPeriod = new Set(
-          (allEnts || [])
-            .filter(e => isMenstrualFlow(e.menstruation))
-            .map(e => e.cycle_id)
+        const cycleIdsWithEntries = new Set(
+          (allEnts || []).map(e => e.cycle_id)
         );
 
-        const ghostCycles = cycleList.filter(c => !cycleIdsWithPeriod.has(c.id));
+        const ghostCycles = cycleList.filter(c => !cycleIdsWithEntries.has(c.id));
         if (ghostCycles.length > 0 && ghostCycles.length < cycleList.length) {
           for (const ghost of ghostCycles) {
             await client.from('cycles').delete().eq('id', ghost.id);
@@ -319,12 +317,15 @@ export function useCycleData() {
         const bbtMethod = activeCycle?.bbt_method || 'Vaginale';
         const name = activeCycle?.name || user.user_metadata?.full_name || 'Maria';
 
+        const estInfo = getEstimatedCycleForDate(newStartDate, sortedCycles, stats.averageCycleLength || 28);
+        const assignedCycleNumber = estInfo.cycleNumber > 0 ? estInfo.cycleNumber : (sortedCycles.length + 1);
+
         const { data: newCycle, error: insertErr } = await client
           .from('cycles')
           .insert({
             user_id: user.id,
             name,
-            cycle_number: (sortedCycles.length + 1),
+            cycle_number: assignedCycleNumber,
             year: calculatedYear,
             month_str: calculatedMonthStr,
             start_date: newStartDate,

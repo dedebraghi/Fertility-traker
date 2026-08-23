@@ -499,6 +499,7 @@ export function getEstimatedCycleForDate(
   cycleDay: number;
   isExistingCycle: boolean;
   existingCycleId?: string;
+  isEstimated?: boolean;
 } {
   const cycleLen = Math.max(20, Math.min(45, avgCycleLength || 28));
 
@@ -512,84 +513,41 @@ export function getEstimatedCycleForDate(
       startDate: dateStr,
       cycleDay: 1,
       isExistingCycle: false,
+      isEstimated: true,
     };
   }
 
-  // 1. Check if date falls exactly into one of the existing real cycles
-  for (let i = 0; i < validCycles.length; i++) {
-    const curr = validCycles[i];
-    const next = i < validCycles.length - 1 ? validCycles[i + 1] : null;
+  // Generate the full sequence up to dateStr
+  const fullSeq = generateFullCycleSequence(validCycles, {}, cycleLen, dateStr);
 
-    if (dateStr >= curr.start_date && (!next || dateStr < next.start_date)) {
-      const day = calculateDayFromDate(curr.start_date, dateStr) || 1;
-      const isWithinRealSpan = day <= (curr.shortest_cycle || cycleLen + 15);
-
-      if (isWithinRealSpan || !next) {
-        return {
-          cycleNumber: curr.cycle_number,
-          startDate: curr.start_date,
-          cycleDay: day,
-          isExistingCycle: true,
-          existingCycleId: curr.id,
-        };
+  if (fullSeq.length > 0) {
+    let matched = fullSeq[0];
+    for (let s = fullSeq.length - 1; s >= 0; s--) {
+      if (fullSeq[s].start_date <= dateStr) {
+        matched = fullSeq[s];
+        break;
       }
     }
-  }
 
-  // 2. Check if date is BEFORE the first recorded cycle -> Backward estimation
-  const firstCycle = validCycles[0];
-  if (dateStr < firstCycle.start_date) {
-    const daysBefore = calculateDayFromDate(dateStr, firstCycle.start_date);
-    if (daysBefore !== null && daysBefore > 0) {
-      const cyclesBefore = Math.ceil(daysBefore / cycleLen);
-      const estimatedCycleNum = Math.max(1, (firstCycle.cycle_number || 1) - cyclesBefore);
-      const estStartOffset = cyclesBefore * cycleLen;
-      const estStartDate = addDaysIso(firstCycle.start_date, -estStartOffset);
-      const estDay = calculateDayFromDate(estStartDate, dateStr) || 1;
-
+    if (matched) {
+      const day = calculateDayFromDate(matched.start_date, dateStr) || 1;
       return {
-        cycleNumber: estimatedCycleNum,
-        startDate: estStartDate,
-        cycleDay: Math.max(1, estDay),
-        isExistingCycle: false,
+        cycleNumber: matched.cycle_number,
+        startDate: matched.start_date,
+        cycleDay: Math.max(1, day),
+        isExistingCycle: !matched.is_estimated && Boolean(matched.id),
+        existingCycleId: matched.id,
+        isEstimated: Boolean(matched.is_estimated),
       };
     }
   }
 
-  // 3. Beyond the latest cycle -> Forward estimation
-  const latestCycle = validCycles[validCycles.length - 1];
-  const diffDays = calculateDayFromDate(latestCycle.start_date, dateStr);
-
-  if (diffDays === null || diffDays <= 0) {
-    return {
-      cycleNumber: latestCycle.cycle_number,
-      startDate: latestCycle.start_date,
-      cycleDay: 1,
-      isExistingCycle: true,
-      existingCycleId: latestCycle.id,
-    };
-  }
-
-  if (diffDays <= cycleLen) {
-    return {
-      cycleNumber: latestCycle.cycle_number,
-      startDate: latestCycle.start_date,
-      cycleDay: diffDays,
-      isExistingCycle: true,
-      existingCycleId: latestCycle.id,
-    };
-  }
-
-  const cyclesPassed = Math.floor((diffDays - 1) / cycleLen);
-  const estimatedCycleNumber = (latestCycle.cycle_number || 1) + cyclesPassed;
-  const estimatedStartDateStr = addDaysIso(latestCycle.start_date, cyclesPassed * cycleLen);
-  const estimatedCycleDay = calculateDayFromDate(estimatedStartDateStr, dateStr) || 1;
-
   return {
-    cycleNumber: estimatedCycleNumber,
-    startDate: estimatedStartDateStr,
-    cycleDay: estimatedCycleDay,
+    cycleNumber: 1,
+    startDate: dateStr,
+    cycleDay: 1,
     isExistingCycle: false,
+    isEstimated: true,
   };
 }
 

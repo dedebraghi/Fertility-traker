@@ -93,6 +93,8 @@ const MainContent: React.FC = () => {
           <TodayView
             activeCycle={activeCycle}
             allCycles={cycles}
+            fullCycleSequence={fullCycleSequence}
+            stats={stats}
             dailyEntries={dailyEntries}
             allEntriesByDate={allEntriesByDate}
             onSaveEntryForDate={saveEntryForDate}
