@@ -10,6 +10,21 @@
   "protocol_number": "",
   "sigla": "",
   "daily_entries": {
+    "6": {
+      "date": "2025-02-25",
+      "cycle_day": 6,
+      "bbt": null,
+      "time": null,
+      "menstruation": "Flusso",
+      "sensation": null,
+      "mucus_qty_symbol": null,
+      "mucus_char": null,
+      "cervix_consistency": null,
+      "cervix_opening": null,
+      "cervix_position": null,
+      "intercourse": null,
+      "notes": null
+    },
     "7": {
       "date": "2025-02-26",
       "cycle_day": 7,
