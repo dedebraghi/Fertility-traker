@@ -56,32 +56,7 @@ export function useCycleData() {
 
       if (fetchErr) throw fetchErr;
 
-      let cycleList: Cycle[] = data || [];
-
-      // Auto-reconciliation of ghost/orphaned cycles (without any registered daily entries)
-      if (cycleList.length > 1) {
-        const { data: allEnts } = await client
-          .from('daily_entries')
-          .select('cycle_id')
-          .eq('user_id', user.id);
-
-        const cycleIdsWithEntries = new Set(
-          (allEnts || []).map(e => e.cycle_id)
-        );
-
-        const ghostCycles = cycleList.filter(c => !cycleIdsWithEntries.has(c.id));
-        if (ghostCycles.length > 0 && ghostCycles.length < cycleList.length) {
-          for (const ghost of ghostCycles) {
-            await client.from('cycles').delete().eq('id', ghost.id);
-          }
-          const { data: cleanData } = await client
-            .from('cycles')
-            .select('*')
-            .order('start_date', { ascending: false });
-          cycleList = cleanData || [];
-        }
-      }
-
+      const cycleList: Cycle[] = data || [];
       setCycles(cycleList);
 
       if (cycleList.length > 0) {
@@ -343,9 +318,6 @@ export function useCycleData() {
         if (insertErr) throw insertErr;
         targetCycle = newCycle;
       }
-
-      // Reconcile and re-index all cycles immediately
-      await reconcileAndReindexAllCycles();
     } else {
       // Find matching cycle for this date
       if (sortedCycles.length > 0) {
@@ -454,8 +426,13 @@ export function useCycleData() {
       }
     }
 
-    await fetchAllDailyEntries();
-    if (activeCycleId) await fetchDailyEntries(activeCycleId);
+    if (options?.forceNewCycle || isFirstMenstDay) {
+      await reconcileAndReindexAllCycles();
+      setActiveCycleId(targetCycle.id);
+    } else {
+      await fetchAllDailyEntries();
+      if (activeCycleId) await fetchDailyEntries(activeCycleId);
+    }
   };
 
   // 7. Save Daily Entry wrapper
