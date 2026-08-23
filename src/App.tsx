@@ -25,6 +25,7 @@ const MainContent: React.FC = () => {
     dailyEntries,
     allEntriesByDate,
     allEntriesList,
+    stats,
     saveDailyEntry,
     saveEntryForDate,
     transitionToNewCycle,

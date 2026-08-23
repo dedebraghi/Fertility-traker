@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Cycle, DailyEntry, BbtMethod } from '../../types';
+import { Cycle, DailyEntry, BbtMethod, FullCycleItem, CycleStatistics } from '../../types';
 import { TemperaturePicker } from './TemperaturePicker';
 import { VisualChipsPicker } from './VisualChipsPicker';
 import {
