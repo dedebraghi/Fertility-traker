@@ -1,4 +1,4 @@
-import { Cycle, DailyEntry, FullCycleItem } from '../types';
+import { Cycle, DailyEntry, FullCycleItem, SymptothermalEvaluation } from '../types';
 
 /**
  * Format a Date object to YYYY-MM-DD string
@@ -116,8 +116,6 @@ export const CERVIX_POSITION_LABELS: Record<string, { label: string; desc: strin
   M: { label: 'Media (M)', desc: 'Posizione intermedia' },
   A: { label: 'Alta (A)', desc: 'Profonda / difficile da raggiungere' },
 };
-
-import { DailyEntry, SymptothermalEvaluation, FullCycleItem, Cycle } from '../types';
 
 /**
  * Computes a simple hash / fingerprint of daily entries to detect when data has changed.
@@ -266,6 +264,7 @@ export function evaluateSymptothermalStatus(entries: Record<number, DailyEntry>)
         }
 
         result.follicularPhaseLength = h1Day - 1;
+        result.ovulationDay = h1Day - 1;
         if (maxDay >= thermalEndDay) {
           result.lutealPhaseLength = maxDay - (h1Day - 1);
         }

@@ -162,6 +162,15 @@ export function useCycleData() {
     return computeCycleStatistics(cycles, allEntriesList);
   }, [cycles, allEntriesList]);
 
+  // Symptothermal cycles with active tracking or measurements (for UI selector, charts, PDFs)
+  const symptothermalCycles = useMemo(() => {
+    return cycles.filter(c => {
+      if (c.is_active) return true;
+      const entries = allEntriesList.filter(e => e.cycle_id === c.id);
+      return entries.some(e => e.bbt !== null || e.sensation !== null || e.mucus_char !== null || e.cervix_consistency !== null || e.cervix_opening !== null);
+    });
+  }, [cycles, allEntriesList]);
+
   const todayIso = new Date().toISOString().split('T')[0];
 
   const fullCycleSequence: FullCycleItem[] = useMemo(() => {
@@ -725,6 +734,7 @@ export function useCycleData() {
 
   return {
     cycles,
+    symptothermalCycles,
     fullCycleSequence,
     activeCycle,
     activeCycleId,

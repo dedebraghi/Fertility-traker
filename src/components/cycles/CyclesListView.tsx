@@ -1,11 +1,12 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Cycle, FullCycleItem, LegacyCycleJSON } from '../../types';
-import { Plus, Check, Edit2, Trash2, Calendar, UploadCloud, Sparkles, RefreshCw, ChevronRight } from 'lucide-react';
+import { Plus, Check, Edit2, Trash2, Calendar, UploadCloud, Sparkles, RefreshCw, ChevronRight, Activity } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { formatDateItalian } from '../../utils/symptothermal';
 
 interface CyclesListViewProps {
   cycles: Cycle[];
+  symptothermalCycles?: Cycle[];
   fullCycleSequence?: FullCycleItem[];
   activeCycleId: string | null;
   onSelectActiveCycle: (id: string) => void;
@@ -20,6 +21,7 @@ interface CyclesListViewProps {
 
 export const CyclesListView: React.FC<CyclesListViewProps> = ({
   cycles,
+  symptothermalCycles = [],
   fullCycleSequence = [],
   activeCycleId,
   onSelectActiveCycle,
@@ -33,6 +35,7 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
 }) => {
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [filterMode, setFilterMode] = useState<'sympto' | 'all'>('sympto');
 
   const handleDelete = async (id: string, num: number) => {
     if (confirm(`Sei sicuro/a di voler eliminare il ciclo ${num} e tutti i suoi dati registrati?`)) {
@@ -70,8 +73,24 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
     reader.readAsText(file);
   };
 
-  // Use fullCycleSequence if available, sorted descending for display (latest first)
-  const displayCycles = fullCycleSequence.length > 0
+  // Determine cycles to display based on filterMode
+  const symptoList: FullCycleItem[] = (symptothermalCycles.length > 0 ? symptothermalCycles : cycles).map(c => ({
+    id: c.id,
+    cycle_number: c.cycle_number,
+    year: c.year,
+    month_str: c.month_str,
+    start_date: c.start_date,
+    bbt_method: c.bbt_method,
+    shortest_cycle: c.shortest_cycle,
+    teacher_code: c.teacher_code,
+    protocol_number: c.protocol_number,
+    sigla: c.sigla,
+    is_active: c.is_active,
+    is_estimated: false,
+    has_data: true,
+  }));
+
+  const allList: FullCycleItem[] = fullCycleSequence.length > 0
     ? [...fullCycleSequence].reverse()
     : cycles.map(c => ({
         id: c.id,
@@ -89,6 +108,10 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
         has_data: true,
       }));
 
+  const displayCycles = filterMode === 'sympto' && symptoList.length > 0
+    ? [...symptoList].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime())
+    : allList;
+
   return (
     <div className="space-y-4 max-w-lg mx-auto pb-24 fade-in">
       
@@ -104,9 +127,9 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
       {/* Top action header with New Cycle and Import JSON */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Archivio Storico Cicli</h2>
+          <h2 className="text-xl font-bold text-stone-900">Archivio Cicli</h2>
           <p className="text-xs text-stone-500">
-            Cicli reali da checkpoint mestruale e cicli stimati intermedi
+            {filterMode === 'sympto' ? 'Cicli con raccolta dati sintotermica' : 'Tutti i cicli storici e stimati'}
           </p>
         </div>
 
@@ -145,6 +168,34 @@ export const CyclesListView: React.FC<CyclesListViewProps> = ({
             <span>+ Manuale</span>
           </button>
         </div>
+      </div>
+
+      {/* Filter Tabs: Sintotermici vs Tutti */}
+      <div className="flex items-center bg-stone-100/80 p-1 rounded-2xl border border-stone-200/70">
+        <button
+          type="button"
+          onClick={() => setFilterMode('sympto')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            filterMode === 'sympto'
+              ? 'bg-white text-nature-900 shadow-sm'
+              : 'text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5 text-nature-600" />
+          <span>Sintotermici ({symptoList.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterMode('all')}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            filterMode === 'all'
+              ? 'bg-white text-nature-900 shadow-sm'
+              : 'text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5 text-stone-500" />
+          <span>Tutto lo Storico ({allList.length})</span>
+        </button>
       </div>
 
       {displayCycles.length === 0 ? (

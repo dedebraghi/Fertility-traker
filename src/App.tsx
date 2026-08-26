@@ -18,6 +18,7 @@ import { InstallModal } from './components/pwa/InstallModal';
 const MainContent: React.FC = () => {
   const {
     cycles,
+    symptothermalCycles,
     fullCycleSequence,
     activeCycle,
     activeCycleId,
@@ -81,7 +82,7 @@ const MainContent: React.FC = () => {
       {/* Header with cycle selector and Auth */}
       <Header
         activeCycle={activeCycle}
-        cycles={cycles}
+        cycles={symptothermalCycles && symptothermalCycles.length > 0 ? symptothermalCycles : cycles}
         onSelectCycle={setActiveCycleId}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenInstall={() => setIsInstallModalOpen(true)}
@@ -126,7 +127,7 @@ const MainContent: React.FC = () => {
           <AnalysisView
             activeCycle={activeCycle}
             dailyEntries={dailyEntries}
-            allCycles={cycles}
+            allCycles={symptothermalCycles && symptothermalCycles.length > 0 ? symptothermalCycles : cycles}
             onNavigateToSettings={() => setActiveTab('settings')}
           />
         )}
@@ -134,6 +135,7 @@ const MainContent: React.FC = () => {
         {activeTab === 'cycles' && (
           <CyclesListView
             cycles={cycles}
+            symptothermalCycles={symptothermalCycles}
             fullCycleSequence={fullCycleSequence}
             activeCycleId={activeCycleId}
             onSelectActiveCycle={(id) => {

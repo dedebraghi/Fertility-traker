@@ -123,6 +123,7 @@ export interface CycleStatistics {
   averageCycleLength: number; // e.g. 28
   averagePeriodLength: number; // e.g. 5
   averageLutealPhase: number; // e.g. 14
+  averageOvulationDay: number; // e.g. 15 (calculated from thermal shift)
   completedCyclesCount: number;
   minCycleLength: number | null;
   maxCycleLength: number | null;
@@ -140,6 +141,7 @@ export interface SymptothermalEvaluation {
   fertileWindowClosedDay: number | null; // the evening of this cycle day
   follicularPhaseLength: number | null;
   lutealPhaseLength: number | null;
+  ovulationDay?: number | null; // nadir / day preceding 1st thermal rise
   notesSummary?: string[];
 }
 

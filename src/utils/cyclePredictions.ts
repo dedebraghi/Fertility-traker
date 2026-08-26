@@ -77,14 +77,18 @@ export function computeCycleStatistics(
     }
   }
 
-  // Calculate average luteal phase
+  // Calculate average luteal phase and average ovulation day from symptothermal evaluations
   const lutealPhases: number[] = [];
+  const ovulationDays: number[] = [];
   for (const cycleId of Object.keys(entriesByCycle)) {
     const entriesMap: Record<number, DailyEntry> = {};
     for (const e of entriesByCycle[cycleId]) {
       entriesMap[e.cycle_day] = e;
     }
     const evalResult = evaluateSymptothermalStatus(entriesMap);
+    if (evalResult.hasOvulationDetected && evalResult.ovulationDay && evalResult.ovulationDay >= 8 && evalResult.ovulationDay <= 35) {
+      ovulationDays.push(evalResult.ovulationDay);
+    }
     if (evalResult.lutealPhaseLength && evalResult.lutealPhaseLength >= 8 && evalResult.lutealPhaseLength <= 18) {
       lutealPhases.push(evalResult.lutealPhaseLength);
     }
@@ -105,10 +109,16 @@ export function computeCycleStatistics(
       ? Math.round(lutealPhases.reduce((a, b) => a + b, 0) / lutealPhases.length)
       : 14;
 
+  const avgOvulationDay =
+    ovulationDays.length > 0
+      ? Math.round(ovulationDays.reduce((a, b) => a + b, 0) / ovulationDays.length)
+      : (avgCycleLength >= 20 ? Math.max(9, avgCycleLength - avgLutealPhase) : 14);
+
   return {
     averageCycleLength: avgCycleLength >= 20 && avgCycleLength <= 45 ? avgCycleLength : 28,
     averagePeriodLength: avgPeriodLength >= 2 && avgPeriodLength <= 8 ? avgPeriodLength : 5,
     averageLutealPhase: avgLutealPhase >= 9 && avgLutealPhase <= 17 ? avgLutealPhase : 14,
+    averageOvulationDay: avgOvulationDay >= 8 && avgOvulationDay <= 35 ? avgOvulationDay : 14,
     completedCyclesCount: cycleLengths.length,
     minCycleLength: cycleLengths.length > 0 ? Math.min(...cycleLengths) : null,
     maxCycleLength: cycleLengths.length > 0 ? Math.max(...cycleLengths) : null,
@@ -133,25 +143,46 @@ export function generatePredictions(
   rangeEndStr: string,
   cycles: Cycle[],
   stats: CycleStatistics,
-  fullCycleSequence?: FullCycleItem[]
+  fullCycleSequence?: FullCycleItem[],
+  entriesByDate?: Record<string, DailyEntry>
 ): PredictedDateMap {
   const result: PredictedDateMap = {};
   const sequence = fullCycleSequence && fullCycleSequence.length > 0
     ? fullCycleSequence
-    : generateFullCycleSequence(cycles, {}, stats.averageCycleLength || 28);
+    : generateFullCycleSequence(cycles, entriesByDate || {}, stats.averageCycleLength || 28);
 
   if (sequence.length === 0) return result;
 
   const firstRecordedStart = sequence[0].start_date;
   const cycleLen = stats.averageCycleLength || 28;
   const periodLen = stats.averagePeriodLength || 5;
-  const lutealLen = stats.averageLutealPhase || 14;
 
-  // Helper to mark a single predicted cycle given its start date
+  // Build map of actual confirmed ovulation date per cycle start date from symptothermal entries
+  const realOvulationDateByCycleStart: Record<string, string> = {};
+  if (entriesByDate) {
+    for (const c of cycles) {
+      if (!c.start_date) continue;
+      const cycleEntries: Record<number, DailyEntry> = {};
+      Object.values(entriesByDate).forEach((e) => {
+        if (e.cycle_id === c.id) {
+          cycleEntries[e.cycle_day] = e;
+        }
+      });
+      const evalRes = evaluateSymptothermalStatus(cycleEntries);
+      if (evalRes.hasOvulationDetected && evalRes.ovulationDay) {
+        const ovDate = calculateDateForDay(c.start_date, evalRes.ovulationDay);
+        if (ovDate) {
+          realOvulationDateByCycleStart[c.start_date] = ovDate;
+        }
+      }
+    }
+  }
+
+  // Helper to mark a single predicted/actual cycle given its start date
   const markPredictedCycle = (cycleStart: string, nextCycleStart?: string) => {
     if (cycleStart < firstRecordedStart) return;
 
-    // 1. Period days (only predicted if not past real flow)
+    // 1. Period days
     for (let p = 0; p < periodLen; p++) {
       const d = addDaysIso(cycleStart, p);
       if (d >= firstRecordedStart) {
@@ -160,17 +191,20 @@ export function generatePredictions(
       }
     }
 
-    // 2. Ovulation calculation
-    const effectiveNextStart = nextCycleStart || addDaysIso(cycleStart, cycleLen);
-    const ovulationDate = addDaysIso(effectiveNextStart, -lutealLen);
+    // 2. Ovulation calculation: prefer actual symptothermal ovulation day if confirmed, else statistical average
+    let ovulationDate: string | null = realOvulationDateByCycleStart[cycleStart] || null;
+    if (!ovulationDate) {
+      const targetOvDay = stats.averageOvulationDay || (stats.averageCycleLength ? stats.averageCycleLength - (stats.averageLutealPhase || 14) : 14);
+      ovulationDate = addDaysIso(cycleStart, targetOvDay - 1);
+    }
 
-    if (ovulationDate >= firstRecordedStart) {
+    if (ovulationDate && ovulationDate >= firstRecordedStart) {
       if (!result[ovulationDate]) {
         result[ovulationDate] = { isPeriod: false, isOvulation: false, isFertileWindow: false, cycleStart };
       }
       result[ovulationDate].isOvulation = true;
 
-      // 3. Fertile window: 5 days before ovulation + ovulation + 1 day after
+      // 3. Fertile window: 5 days before ovulation + ovulation + 1 day after (the 1st thermal rise day)
       for (let f = -5; f <= 1; f++) {
         const fertileDay = addDaysIso(ovulationDate, f);
         if (fertileDay >= firstRecordedStart) {
@@ -243,7 +277,7 @@ export function buildMonthCalendar(
     todayIso
   );
 
-  const predictions = generatePredictions(startIso, endIso, cycles, stats, fullCycleSequence);
+  const predictions = generatePredictions(startIso, endIso, cycles, stats, fullCycleSequence, entriesByDate);
 
   const firstSequenceStartDate = fullCycleSequence.length > 0 ? fullCycleSequence[0].start_date : null;
 

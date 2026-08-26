@@ -145,16 +145,18 @@ export const TodayView: React.FC<TodayViewProps> = ({
     }
   }, [selectedDate, allEntriesByDate]);
 
+  const isAnyBleeding = (m: DailyEntry['menstruation']) => Boolean(m && ['Flusso', 'Abbondante', 'Spotting', 'M', 'm'].includes(m));
+
   // Handler for changing menstruation chip
   const handleMenstruationChange = (newMenst: DailyEntry['menstruation']) => {
     setMenstruation(newMenst);
 
-    if (isMenstrualFlow(newMenst)) {
+    if (isAnyBleeding(newMenst)) {
       const prevDate = addDaysIso(selectedDate, -1);
       const prevEntry = allEntriesByDate[prevDate];
-      const prevHadFlow = Boolean(prevEntry && isMenstrualFlow(prevEntry.menstruation));
+      const prevHadBleeding = Boolean(prevEntry && isAnyBleeding(prevEntry.menstruation));
 
-      if (!prevHadFlow) {
+      if (!prevHadBleeding) {
         setPendingMenstruation(newMenst);
         setShowTransitionModal(true);
       }
@@ -184,13 +186,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
     newCycleStartDate?: string;
     isContinuationOfLongCycle?: boolean;
   }) => {
-    // If user has chosen flow but not yet answered modal
-    if (isMenstrualFlow(menstruation) && !options) {
+    // If user has chosen bleeding (flow or spotting) but not yet answered modal
+    if (isAnyBleeding(menstruation) && !options) {
       const prevDate = addDaysIso(selectedDate, -1);
       const prevEntry = allEntriesByDate[prevDate];
-      const prevHadFlow = Boolean(prevEntry && isMenstrualFlow(prevEntry.menstruation));
+      const prevHadBleeding = Boolean(prevEntry && isAnyBleeding(prevEntry.menstruation));
 
-      if (!prevHadFlow) {
+      if (!prevHadBleeding) {
         setPendingMenstruation(menstruation);
         setShowTransitionModal(true);
         return;

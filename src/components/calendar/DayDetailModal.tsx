@@ -123,14 +123,14 @@ export const DayDetailModal: React.FC<DayDetailModalProps> = ({
     newCycleStartDate?: string;
     isContinuationOfLongCycle?: boolean;
   }) => {
-    // Check if new entry has genuine flow (Flusso / Abbondante)
-    const isEnteringFlow = isMenstrualFlow(menstruation);
+    // Check if new entry has flow or spotting
+    const isEnteringBleeding = Boolean(menstruation && ['Flusso', 'Abbondante', 'Spotting', 'M', 'm'].includes(menstruation));
     const prevDate = addDaysIso(dayData.date, -1);
     const prevEntry = allEntriesByDate[prevDate];
-    const prevHadFlow = Boolean(prevEntry && isMenstrualFlow(prevEntry.menstruation));
+    const prevHadBleeding = Boolean(prevEntry && prevEntry.menstruation && ['Flusso', 'Abbondante', 'Spotting', 'M', 'm'].includes(prevEntry.menstruation));
 
-    // If entering flow on a date not preceded by flow, and not explicitly decided yet -> ask user
-    if (isEnteringFlow && !prevHadFlow && !options) {
+    // If entering bleeding on a date not preceded by bleeding, and not explicitly decided yet -> ask user
+    if (isEnteringBleeding && !prevHadBleeding && !options) {
       setShowMenstChoiceModal(true);
       return;
     }
