@@ -162,12 +162,13 @@ export function useCycleData() {
     return computeCycleStatistics(cycles, allEntriesList);
   }, [cycles, allEntriesList]);
 
-  // Symptothermal cycles with active tracking or measurements (for UI selector, charts, PDFs)
+  // Symptothermal cycles with active tracking or BBT measurements (for UI selector, charts, PDFs)
   const symptothermalCycles = useMemo(() => {
     return cycles.filter(c => {
       if (c.is_active) return true;
       const entries = allEntriesList.filter(e => e.cycle_id === c.id);
-      return entries.some(e => e.bbt !== null || e.sensation !== null || e.mucus_char !== null || e.cervix_consistency !== null || e.cervix_opening !== null);
+      // I cicli chiusi sintotermici devono avere misurazioni di temperatura basale (BBT)
+      return entries.some(e => e.bbt !== null && typeof e.bbt === 'number');
     });
   }, [cycles, allEntriesList]);
 
