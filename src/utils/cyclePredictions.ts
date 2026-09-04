@@ -226,7 +226,10 @@ export function generatePredictions(
 
   // Project future cycles from latest sequence item up to rangeEndStr and 18 months ahead
   const latestItem = sequence[sequence.length - 1];
-  let projectedStart = addDaysIso(latestItem.start_date, latestItem.length_days || cycleLen);
+  // For an active/ongoing cycle, future projection must be based on expected cycleLen (average length),
+  // NOT on elapsed partial days to today (which was mistakenly setting next cycle to tomorrow).
+  const latestDuration = latestItem.is_active ? cycleLen : (latestItem.length_days || cycleLen);
+  let projectedStart = addDaysIso(latestItem.start_date, latestDuration);
   const rangeEndDate = new Date(rangeEndStr);
   const maxLimit = new Date();
   maxLimit.setFullYear(maxLimit.getFullYear() + 2);
