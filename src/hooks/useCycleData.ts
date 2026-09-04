@@ -491,6 +491,22 @@ export function useCycleData() {
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
+    // Safety guard against race conditions: verify if user already has cycles in DB
+    const { data: existingCycles, error: checkErr } = await client
+      .from('cycles')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('start_date', { ascending: false });
+
+    if (!checkErr && existingCycles && existingCycles.length > 0) {
+      console.warn('Utente possiede già cicli nel database. Annullamento avvio Ciclo 1 duplicato.');
+      await fetchCycles();
+      await fetchAllDailyEntries();
+      const activeOrLatest = existingCycles.find((c: Cycle) => c.is_active) || existingCycles[0];
+      if (activeOrLatest) setActiveCycleId(activeOrLatest.id);
+      return activeOrLatest as Cycle;
+    }
+
     const [y] = startDate.split('-').map(Number);
     const calculatedYear = !isNaN(y) ? y : new Date().getFullYear();
     const calculatedMonthStr = generateMonthStr(startDate);
@@ -539,8 +555,23 @@ export function useCycleData() {
     const client = getSupabaseClient();
     if (!client) throw new Error('Database Supabase non connesso');
 
+    // Ensure cycle number is never 1 or duplicated if cycles already exist
+    let assignedNumber = Number(cycleData.cycle_number) || 1;
+    const { data: userCycles } = await client
+      .from('cycles')
+      .select('cycle_number')
+      .eq('user_id', user.id);
+
+    if (userCycles && userCycles.length > 0) {
+      const maxExistingNum = Math.max(...userCycles.map((c: any) => Number(c.cycle_number) || 0));
+      if (assignedNumber <= 1 || userCycles.some((c: any) => Number(c.cycle_number) === assignedNumber)) {
+        assignedNumber = maxExistingNum + 1;
+      }
+    }
+
     const payload = {
       ...cycleData,
+      cycle_number: assignedNumber,
       user_id: user.id,
     };
 

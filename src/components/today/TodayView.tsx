@@ -23,6 +23,7 @@ import {
 interface TodayViewProps {
   activeCycle: Cycle | null;
   allCycles: Cycle[];
+  loading?: boolean;
   fullCycleSequence?: FullCycleItem[];
   stats?: CycleStatistics;
   dailyEntries: Record<number, DailyEntry>;
@@ -50,6 +51,7 @@ interface TodayViewProps {
 export const TodayView: React.FC<TodayViewProps> = ({
   activeCycle,
   allCycles,
+  loading = false,
   fullCycleSequence = [],
   stats,
   allEntriesByDate = {},
@@ -232,6 +234,16 @@ export const TodayView: React.FC<TodayViewProps> = ({
       setSaving(false);
     }
   };
+
+  // If loading data from Supabase -> show loading spinner instead of onboarding
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 fade-in">
+        <div className="w-9 h-9 border-3 border-nature-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-stone-500 font-medium">Caricamento ciclo in corso...</p>
+      </div>
+    );
+  }
 
   // If no cycle exists at all -> Clean Onboarding Card
   if (!allCycles || allCycles.length === 0) {

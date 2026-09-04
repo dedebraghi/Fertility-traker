@@ -95,6 +95,7 @@ const MainContent: React.FC = () => {
           <TodayView
             activeCycle={activeCycle}
             allCycles={cycles}
+            loading={loading}
             fullCycleSequence={fullCycleSequence}
             stats={stats}
             dailyEntries={dailyEntries}
