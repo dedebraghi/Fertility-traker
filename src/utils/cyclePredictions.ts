@@ -1,4 +1,4 @@
-import { Cycle, DailyEntry, CalendarDayData, CycleStatistics } from '../types';
+import { Cycle, DailyEntry, CalendarDayData, CycleStatistics, FullCycleItem } from '../types';
 import {
   evaluateSymptothermalStatus,
   calculateDayFromDate,
