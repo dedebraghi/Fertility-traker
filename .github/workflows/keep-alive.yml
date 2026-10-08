@@ -2,8 +2,8 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    # Esegue ogni 3 giorni alle ore 04:00 UTC (circa 05:00/06:00 in Italia)
-    - cron: '0 4 */3 * *'
+    # Esegue ogni 2 giorni alle ore 04:00 UTC per garantire che il database non venga mai considerato inattivo
+    - cron: '0 4 */2 * *'
   workflow_dispatch: # Permette di testarlo manualmente con un pulsante da GitHub
 
 jobs:
