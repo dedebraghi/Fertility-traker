@@ -17,9 +17,16 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhc3RkZnZkZGVhd3VmbnB4eGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNDk2ODcsImV4cCI6MjEwMjcyNTY4N30.axUmEOKGk1gWsRTzgr3q9rI2JS-LDdIPmb3l_5eYAuk' }}
         run: |
           echo "Sending keep-alive ping to Supabase..."
-          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "${SUPABASE_URL}/rest/v1/cycles?select=id&limit=1" \
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "${SUPABASE_URL}/rest/v1/keep_alive?select=id" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          
+          if [ "$RESPONSE_CODE" -ne 200 ]; then
+            echo "keep_alive table returned $RESPONSE_CODE, trying fallback on cycles..."
+            RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "${SUPABASE_URL}/rest/v1/cycles?select=id&limit=1" \
+              -H "apikey: ${SUPABASE_ANON_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          fi
           
           echo "Supabase responded with HTTP status: $RESPONSE_CODE"
           
