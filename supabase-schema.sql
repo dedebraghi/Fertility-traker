@@ -95,3 +95,15 @@ CREATE TRIGGER set_daily_entries_updated_at
     BEFORE UPDATE ON public.daily_entries
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
+
+-- =====================================================================
+-- KEEP ALIVE TABLE (Evita pause automatiche per inattività su Supabase)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.keep_alive (
+    id INT PRIMARY KEY DEFAULT 1,
+    pinged_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.keep_alive ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_anon_read" ON public.keep_alive;
+CREATE POLICY "allow_anon_read" ON public.keep_alive FOR SELECT TO anon USING (true);
+INSERT INTO public.keep_alive (id) VALUES (1) ON CONFLICT (id) DO UPDATE SET pinged_at = now();
